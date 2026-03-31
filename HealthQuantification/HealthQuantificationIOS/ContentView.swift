@@ -151,9 +151,13 @@ struct ContentView: View {
 
         do {
             let samples = try await model.fetchBodySamples(days: 30)
-            let response = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: samples)
-            resultLines.append("body: sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
+            if samples.isEmpty {
+                resultLines.append("body: no data")
+            } else {
+                let response = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: samples)
+                resultLines.append("body: sent \(samples.count), upserted \(response.upserted)")
+                hadSuccess = true
+            }
         } catch {
             resultLines.append("body: FAILED - \(error.localizedDescription)")
             hadFailure = true
@@ -161,9 +165,13 @@ struct ContentView: View {
 
         do {
             let samples = try await model.fetchLifestyleSamples(days: 30)
-            let response = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: samples)
-            resultLines.append("lifestyle: sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
+            if samples.isEmpty {
+                resultLines.append("lifestyle: no data")
+            } else {
+                let response = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: samples)
+                resultLines.append("lifestyle: sent \(samples.count), upserted \(response.upserted)")
+                hadSuccess = true
+            }
         } catch {
             resultLines.append("lifestyle: FAILED - \(error.localizedDescription)")
             hadFailure = true
