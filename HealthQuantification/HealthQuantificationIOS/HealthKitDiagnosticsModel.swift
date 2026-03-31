@@ -19,7 +19,7 @@ final class HealthKitService {
 
     var logText: String {
         if logEntries.isEmpty {
-            return "No events yet. Tap Run Doctor, Request Sleep Access, or Export Sleep (30 days)."
+            return "No events yet. Tap Run Doctor, Request Health Access, Export Sleep, or Export All."
         }
         return logEntries.joined(separator: "\n\n")
     }
@@ -38,14 +38,14 @@ final class HealthKitService {
         )
     }
 
-    func requestSleepAccess() {
+    func requestHealthAccess() {
         runDoctor()
 
         guard !isUITestMockHealthDataAvailable else {
             authorizationState = "granted"
             lastUpdated = Self.isoTimestamp(Date())
             appendLog(
-                title: "requestSleepAccess",
+                title: "requestHealthAccess",
                 payload: [
                     "result": authorizationState,
                     "timestamp": lastUpdated,
@@ -56,23 +56,24 @@ final class HealthKitService {
 
         guard HKHealthStore.isHealthDataAvailable() else {
             authorizationState = "health_data_unavailable"
-            appendLog(title: "requestSleepAccess", payload: ["result": authorizationState])
+            appendLog(title: "requestHealthAccess", payload: ["result": authorizationState])
             return
         }
 
-        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            authorizationState = "sleep_type_unavailable"
-            appendLog(title: "requestSleepAccess", payload: ["result": authorizationState])
+        let readTypes = readTypesForExport()
+        guard !readTypes.isEmpty else {
+            authorizationState = "health_types_unavailable"
+            appendLog(title: "requestHealthAccess", payload: ["result": authorizationState])
             return
         }
 
-        healthStore.requestAuthorization(toShare: [], read: [sleepType]) { success, error in
+        healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
             Task { @MainActor in
                 self.lastUpdated = Self.isoTimestamp(Date())
                 if let error {
                     self.authorizationState = "error"
                     self.appendLog(
-                        title: "requestSleepAccess",
+                        title: "requestHealthAccess",
                         payload: [
                             "error": error.localizedDescription,
                             "timestamp": self.lastUpdated,
@@ -83,7 +84,7 @@ final class HealthKitService {
 
                 self.authorizationState = success ? "granted" : "denied"
                 self.appendLog(
-                    title: "requestSleepAccess",
+                    title: "requestHealthAccess",
                     payload: [
                         "result": self.authorizationState,
                         "timestamp": self.lastUpdated,
@@ -91,6 +92,10 @@ final class HealthKitService {
                 )
             }
         }
+    }
+
+    func requestSleepAccess() {
+        requestHealthAccess()
     }
 
     func fetchSleepSamples(days: Int) async throws -> [SleepSampleRecord] {
@@ -109,7 +114,7 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(sleepType: sleepType)
+            try await requestReadAuthorization(readTypes: [sleepType])
         } else {
             authorizationState = "granted"
         }
@@ -153,6 +158,231 @@ final class HealthKitService {
         lastUpdated = Self.isoTimestamp(now)
         appendLog(
             title: "fetchSleepSamples",
+            payload: [
+                "days": String(days),
+                "samples": String(records.count),
+                "timestamp": lastUpdated,
+            ]
+        )
+        return records
+    }
+
+    func fetchVitalsSamples(days: Int) async throws -> [VitalsSampleRecord] {
+        runDoctor()
+
+        guard HKHealthStore.isHealthDataAvailable() || isUITestMockHealthDataAvailable else {
+            authorizationState = "health_data_unavailable"
+            appendLog(title: "fetchVitalsSamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        let configurations = vitalsQuantityConfigurations()
+        guard !configurations.isEmpty else {
+            authorizationState = "vitals_types_unavailable"
+            appendLog(title: "fetchVitalsSamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        if !isUITestMockHealthDataAvailable {
+            try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+        } else {
+            authorizationState = "granted"
+        }
+
+        var records: [VitalsSampleRecord] = []
+        for configuration in configurations {
+            let quantitySamples = try await fetchQuantitySamples(days: days, type: configuration.type)
+            records.append(contentsOf: quantitySamples.map { sample in
+                VitalsSampleRecord(
+                    sourceID: sample.uuid.uuidString,
+                    recordedAt: Self.isoTimestamp(sample.startDate),
+                    metricType: configuration.metricType,
+                    value: configuration.transform(sample.quantity),
+                    unit: configuration.unitLabel,
+                    sourceBundleID: sample.sourceRevision.source.bundleIdentifier,
+                    sourceName: sample.sourceRevision.source.name,
+                    metadata: [:]
+                )
+            })
+        }
+
+        let now = Date()
+        authorizationState = "granted"
+        lastUpdated = Self.isoTimestamp(now)
+        appendLog(
+            title: "fetchVitalsSamples",
+            payload: [
+                "days": String(days),
+                "samples": String(records.count),
+                "timestamp": lastUpdated,
+            ]
+        )
+        return records.sorted { lhs, rhs in
+            lhs.recordedAt < rhs.recordedAt
+        }
+    }
+
+    func fetchBodySamples(days: Int) async throws -> [BodySampleRecord] {
+        runDoctor()
+
+        guard HKHealthStore.isHealthDataAvailable() || isUITestMockHealthDataAvailable else {
+            authorizationState = "health_data_unavailable"
+            appendLog(title: "fetchBodySamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        let quantityConfigurations = bodyQuantityConfigurations()
+        let bloodPressureType = HKObjectType.correlationType(forIdentifier: .bloodPressure)
+        let readTypes = Set(quantityConfigurations.map(\.type)).union(bloodPressureType.map { [$0] } ?? [])
+        guard !readTypes.isEmpty else {
+            authorizationState = "body_types_unavailable"
+            appendLog(title: "fetchBodySamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        if !isUITestMockHealthDataAvailable {
+            try await requestReadAuthorization(readTypes: readTypes)
+        } else {
+            authorizationState = "granted"
+        }
+
+        var records: [BodySampleRecord] = []
+        for configuration in quantityConfigurations {
+            let quantitySamples = try await fetchQuantitySamples(days: days, type: configuration.type)
+            records.append(contentsOf: quantitySamples.map { sample in
+                BodySampleRecord(
+                    sourceID: sample.uuid.uuidString,
+                    recordedAt: Self.isoTimestamp(sample.startDate),
+                    metricType: configuration.metricType,
+                    value: configuration.transform(sample.quantity),
+                    unit: configuration.unitLabel,
+                    sourceBundleID: sample.sourceRevision.source.bundleIdentifier,
+                    sourceName: sample.sourceRevision.source.name,
+                    metadata: [:]
+                )
+            })
+        }
+
+        if let bloodPressureType {
+            let bloodPressureSamples = try await fetchBloodPressureSamples(days: days, type: bloodPressureType)
+            records.append(contentsOf: bloodPressureSamples)
+        }
+
+        let now = Date()
+        authorizationState = "granted"
+        lastUpdated = Self.isoTimestamp(now)
+        appendLog(
+            title: "fetchBodySamples",
+            payload: [
+                "days": String(days),
+                "samples": String(records.count),
+                "timestamp": lastUpdated,
+            ]
+        )
+        return records.sorted { lhs, rhs in
+            if lhs.recordedAt == rhs.recordedAt {
+                return lhs.sourceID < rhs.sourceID
+            }
+            return lhs.recordedAt < rhs.recordedAt
+        }
+    }
+
+    func fetchLifestyleSamples(days: Int) async throws -> [LifestyleSampleRecord] {
+        runDoctor()
+
+        guard HKHealthStore.isHealthDataAvailable() || isUITestMockHealthDataAvailable else {
+            authorizationState = "health_data_unavailable"
+            appendLog(title: "fetchLifestyleSamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        let configurations = lifestyleQuantityConfigurations()
+        guard !configurations.isEmpty else {
+            authorizationState = "lifestyle_types_unavailable"
+            appendLog(title: "fetchLifestyleSamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        if !isUITestMockHealthDataAvailable {
+            try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+        } else {
+            authorizationState = "granted"
+        }
+
+        var records: [LifestyleSampleRecord] = []
+        for configuration in configurations {
+            let quantitySamples = try await fetchQuantitySamples(days: days, type: configuration.type)
+            records.append(contentsOf: quantitySamples.map { sample in
+                LifestyleSampleRecord(
+                    sourceID: sample.uuid.uuidString,
+                    recordedAt: Self.isoTimestamp(sample.startDate),
+                    metricType: configuration.metricType,
+                    value: configuration.transform(sample.quantity),
+                    unit: configuration.unitLabel,
+                    sourceBundleID: sample.sourceRevision.source.bundleIdentifier,
+                    sourceName: sample.sourceRevision.source.name,
+                    metadata: [:]
+                )
+            })
+        }
+
+        let now = Date()
+        authorizationState = "granted"
+        lastUpdated = Self.isoTimestamp(now)
+        appendLog(
+            title: "fetchLifestyleSamples",
+            payload: [
+                "days": String(days),
+                "samples": String(records.count),
+                "timestamp": lastUpdated,
+            ]
+        )
+        return records.sorted { lhs, rhs in
+            lhs.recordedAt < rhs.recordedAt
+        }
+    }
+
+    func fetchActivitySamples(days: Int) async throws -> [ActivitySampleRecord] {
+        runDoctor()
+
+        guard HKHealthStore.isHealthDataAvailable() || isUITestMockHealthDataAvailable else {
+            authorizationState = "health_data_unavailable"
+            appendLog(title: "fetchActivitySamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            authorizationState = "activity_type_unavailable"
+            appendLog(title: "fetchActivitySamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        if !isUITestMockHealthDataAvailable {
+            try await requestReadAuthorization(readTypes: [stepCountType])
+        } else {
+            authorizationState = "granted"
+        }
+
+        let quantitySamples = try await fetchQuantitySamples(days: days, type: stepCountType)
+        let records = quantitySamples.map { sample in
+            ActivitySampleRecord(
+                sourceID: sample.uuid.uuidString,
+                startAt: Self.isoTimestamp(sample.startDate),
+                endAt: Self.isoTimestamp(sample.endDate),
+                metricType: "step_count",
+                value: sample.quantity.doubleValue(for: .count()),
+                unit: "count",
+                sourceBundleID: sample.sourceRevision.source.bundleIdentifier,
+                sourceName: sample.sourceRevision.source.name,
+                metadata: [:]
+            )
+        }
+
+        let now = Date()
+        authorizationState = "granted"
+        lastUpdated = Self.isoTimestamp(now)
+        appendLog(
+            title: "fetchActivitySamples",
             payload: [
                 "days": String(days),
                 "samples": String(records.count),
@@ -219,8 +449,7 @@ final class HealthKitService {
         processInfo.arguments.contains("UITEST_HEALTH_DATA_AVAILABLE_TRUE")
     }
 
-    private func requestReadAuthorization(sleepType: HKCategoryType) async throws {
-        let readTypes: Set<HKObjectType> = [sleepType]
+    private func requestReadAuthorization(readTypes: Set<HKObjectType>) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
                 if let error {
@@ -236,6 +465,192 @@ final class HealthKitService {
         }
     }
 
+    private func fetchQuantitySamples(days: Int, type: HKQuantityType) async throws -> [HKQuantitySample] {
+        let now = Date()
+        let startDate = Calendar.current.date(byAdding: .day, value: -days, to: now) ?? now
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: [])
+        let sortDescriptors = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: sortDescriptors
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: (samples as? [HKQuantitySample]) ?? [])
+            }
+            self.healthStore.execute(query)
+        }
+    }
+
+    private func fetchBloodPressureSamples(days: Int, type: HKCorrelationType) async throws -> [BodySampleRecord] {
+        let now = Date()
+        let startDate = Calendar.current.date(byAdding: .day, value: -days, to: now) ?? now
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: [])
+        let sortDescriptors = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+
+        let correlations: [HKCorrelation] = try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: sortDescriptors
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: (samples as? [HKCorrelation]) ?? [])
+            }
+            self.healthStore.execute(query)
+        }
+
+        guard
+            let systolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
+            let diastolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
+        else {
+            return []
+        }
+
+        var records: [BodySampleRecord] = []
+        for correlation in correlations {
+            let recordedAt = Self.isoTimestamp(correlation.startDate)
+            let sourceID = correlation.uuid.uuidString
+            let sourceBundleID = correlation.sourceRevision.source.bundleIdentifier
+            let sourceName = correlation.sourceRevision.source.name
+
+            if let systolicSample = correlation.objects(for: systolicType).first as? HKQuantitySample {
+                records.append(
+                    BodySampleRecord(
+                        sourceID: sourceID,
+                        recordedAt: recordedAt,
+                        metricType: "blood_pressure_systolic",
+                        value: systolicSample.quantity.doubleValue(for: .millimeterOfMercury()),
+                        unit: "mmHg",
+                        sourceBundleID: sourceBundleID,
+                        sourceName: sourceName,
+                        metadata: [:]
+                    )
+                )
+            }
+
+            if let diastolicSample = correlation.objects(for: diastolicType).first as? HKQuantitySample {
+                records.append(
+                    BodySampleRecord(
+                        sourceID: sourceID,
+                        recordedAt: recordedAt,
+                        metricType: "blood_pressure_diastolic",
+                        value: diastolicSample.quantity.doubleValue(for: .millimeterOfMercury()),
+                        unit: "mmHg",
+                        sourceBundleID: sourceBundleID,
+                        sourceName: sourceName,
+                        metadata: [:]
+                    )
+                )
+            }
+        }
+
+        return records
+    }
+
+    private func readTypesForExport() -> Set<HKObjectType> {
+        var readTypes: Set<HKObjectType> = []
+
+        if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            readTypes.insert(sleepType)
+        }
+
+        for configuration in vitalsQuantityConfigurations() {
+            readTypes.insert(configuration.type)
+        }
+        for configuration in bodyQuantityConfigurations() {
+            readTypes.insert(configuration.type)
+        }
+        for configuration in lifestyleQuantityConfigurations() {
+            readTypes.insert(configuration.type)
+        }
+        if let bloodPressureType = HKObjectType.correlationType(forIdentifier: .bloodPressure) {
+            readTypes.insert(bloodPressureType)
+        }
+        if let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) {
+            readTypes.insert(stepCountType)
+        }
+
+        return readTypes
+    }
+
+    private func vitalsQuantityConfigurations() -> [QuantitySampleConfiguration] {
+        [
+            quantityConfiguration(identifier: .restingHeartRate, metricType: "resting_heart_rate", unitLabel: "count/min") { quantity in
+                quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            },
+            quantityConfiguration(identifier: .heartRateVariabilitySDNN, metricType: "heart_rate_variability_sdnn", unitLabel: "ms") { quantity in
+                quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            },
+            quantityConfiguration(identifier: .respiratoryRate, metricType: "respiratory_rate", unitLabel: "count/min") { quantity in
+                quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            },
+            quantityConfiguration(identifier: .oxygenSaturation, metricType: "oxygen_saturation", unitLabel: "%") { quantity in
+                quantity.doubleValue(for: .percent()) * 100.0
+            },
+        ].compactMap { $0 }
+    }
+
+    private func bodyQuantityConfigurations() -> [QuantitySampleConfiguration] {
+        [
+            quantityConfiguration(identifier: .bodyMass, metricType: "body_mass", unitLabel: "kg") { quantity in
+                quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+            },
+            quantityConfiguration(identifier: .bloodGlucose, metricType: "blood_glucose", unitLabel: "mg/dL") { quantity in
+                quantity.doubleValue(for: HKUnit(from: "mg/dL"))
+            },
+        ].compactMap { $0 }
+    }
+
+    private func lifestyleQuantityConfigurations() -> [QuantitySampleConfiguration] {
+        [
+            quantityConfiguration(identifier: .dietaryCaffeine, metricType: "dietary_caffeine", unitLabel: "mg") { quantity in
+                quantity.doubleValue(for: HKUnit.gramUnit(with: .milli))
+            },
+            quantityConfiguration(identifierRawValue: "HKQuantityTypeIdentifierDietaryAlcohol", metricType: "dietary_alcohol", unitLabel: "g") { quantity in
+                quantity.doubleValue(for: .gram())
+            },
+        ].compactMap { $0 }
+    }
+
+    private func quantityConfiguration(
+        identifier: HKQuantityTypeIdentifier,
+        metricType: String,
+        unitLabel: String,
+        transform: @escaping (HKQuantity) -> Double
+    ) -> QuantitySampleConfiguration? {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
+            return nil
+        }
+        return QuantitySampleConfiguration(type: type, metricType: metricType, unitLabel: unitLabel, transform: transform)
+    }
+
+    private func quantityConfiguration(
+        identifierRawValue: String,
+        metricType: String,
+        unitLabel: String,
+        transform: @escaping (HKQuantity) -> Double
+    ) -> QuantitySampleConfiguration? {
+        quantityConfiguration(
+            identifier: HKQuantityTypeIdentifier(rawValue: identifierRawValue),
+            metricType: metricType,
+            unitLabel: unitLabel,
+            transform: transform
+        )
+    }
+
     private func appendLog(title: String, payload: [String: String]) {
         let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
         let text = String(data: data ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
@@ -243,6 +658,13 @@ final class HealthKitService {
         logEntries.append(block)
         print(block)
     }
+}
+
+private struct QuantitySampleConfiguration {
+    let type: HKQuantityType
+    let metricType: String
+    let unitLabel: String
+    let transform: (HKQuantity) -> Double
 }
 
 enum HealthKitServiceError: LocalizedError {

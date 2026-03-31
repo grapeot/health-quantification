@@ -8,7 +8,27 @@ struct IngestClient {
     }
 
     func ingestSleep(serverURL: URL, samples: [SleepSampleRecord]) async throws -> IngestResponse {
-        let endpoint = serverURL.appending(path: "ingest").appending(path: "sleep")
+        try await ingest(samples: samples, endpointName: "sleep", serverURL: serverURL)
+    }
+
+    func ingestVitals(serverURL: URL, samples: [VitalsSampleRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "vitals", serverURL: serverURL)
+    }
+
+    func ingestBody(serverURL: URL, samples: [BodySampleRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "body", serverURL: serverURL)
+    }
+
+    func ingestLifestyle(serverURL: URL, samples: [LifestyleSampleRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "lifestyle", serverURL: serverURL)
+    }
+
+    func ingestActivity(serverURL: URL, samples: [ActivitySampleRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "activity", serverURL: serverURL)
+    }
+
+    private func ingest<Sample: Codable & Equatable>(samples: [Sample], endpointName: String, serverURL: URL) async throws -> IngestResponse {
+        let endpoint = serverURL.appending(path: "ingest").appending(path: endpointName)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

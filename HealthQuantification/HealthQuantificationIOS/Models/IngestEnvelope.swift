@@ -1,16 +1,23 @@
 import Foundation
 
-struct IngestEnvelope: Codable, Equatable {
+struct IngestEnvelope<Sample: Codable & Equatable>: Codable, Equatable {
     let source: String
     let exportedAt: String
     let schemaVersion: String
-    let samples: [SleepSampleRecord]
+    let samples: [Sample]
 
-    init(samples: [SleepSampleRecord], exportedAt: String = HealthKitService.isoTimestamp(Date())) {
+    init(samples: [Sample], exportedAt: String = Self.defaultExportedAt()) {
         self.source = "apple_health_ios"
         self.exportedAt = exportedAt
         self.schemaVersion = "0.1.0"
         self.samples = samples
+    }
+
+    private static func defaultExportedAt() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: Date())
     }
 
     enum CodingKeys: String, CodingKey {

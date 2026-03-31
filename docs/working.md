@@ -2,6 +2,15 @@
 
 ## Changelog
 
+### 2026-03-31 (Phase 2 iOS export implementation)
+
+- 扩展 `HealthQuantificationIOS` 的 `HealthKitService`：在保留 sleep export 流程的前提下，新增 vitals、body、lifestyle、activity 四类 HealthKit 读取逻辑，并把授权范围扩展到 RFC 要求的全部类型。
+- 新增 Swift 数据模型 `VitalsSampleRecord`、`BodySampleRecord`、`LifestyleSampleRecord`、`ActivitySampleRecord`，JSON 字段名与 `docs/rfc.md` 一致；`IngestEnvelope` 改为通用 envelope，继续复用现有 sleep 序列化模式。
+- 扩展 `IngestClient`：新增 POST `/ingest/vitals`、`/ingest/body`、`/ingest/lifestyle`、`/ingest/activity`，沿用现有 `URLRequest + JSONEncoder + JSONDecoder` 模式；sleep endpoint 保持不变。
+- `ContentView` 保留原有 `Export Sleep (30 days)` 按钮，同时新增 `Export All (30 days)`，按类别顺序读取并分别 POST 到五个 ingestion endpoint。
+- 血压按 RFC 通过 `HKCorrelationType.bloodPressure` 读取，拆成 `blood_pressure_systolic` 和 `blood_pressure_diastolic` 两条记录，并共享同一个 `source_id`（correlation UUID）。
+- 验证计划：对改动过的 Swift 文件运行 `lsp_diagnostics`，再跑 `xcodebuild -scheme HealthQuantificationIOS -showdestinations` 和 iOS build，确认工程可编译。
+
 ### 2026-03-31 (Phase 2 backend implementation)
 
 - 实现 Phase 2 SQLite schema：在 `storage.py` 初始化流程中加入 `vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples` 四张表，并补齐对应的 upsert/query/delete 函数。

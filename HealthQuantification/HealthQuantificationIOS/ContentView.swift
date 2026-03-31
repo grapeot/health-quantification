@@ -13,7 +13,7 @@ struct ContentView: View {
 
     @State private var isExporting = false
     @State private var exportStatusTitle = "No export yet"
-    @State private var exportStatusDetail = "Enter a server URL, request access if needed, then export 30 days of sleep data."
+    @State private var exportStatusDetail = "Enter a server URL, request access if needed, then export 30 days of HealthKit data."
     @State private var exportStatusTone: ExportStatusTone = .neutral
 
     private let ingestClient = IngestClient()
@@ -35,8 +35,8 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("runDoctorButton")
 
-                    Button("Request Sleep Access") {
-                        model.requestSleepAccess()
+                    Button("Request Health Access") {
+                        model.requestHealthAccess()
                     }
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("requestSleepAccessButton")
@@ -53,14 +53,31 @@ struct ContentView: View {
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("serverURLField")
 
-                    Button(isExporting ? "Exporting..." : "Export Sleep (30 days)") {
-                        Task {
-                            await exportSleep()
+                    HStack(spacing: 12) {
+                        Button(isExporting ? "Exporting..." : "Export Sleep (30 days)") {
+                            Task {
+                                await exportSleep()
+                            }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isExporting)
+                        .accessibilityIdentifier("exportSleepButton")
+
+                        Button(isExporting ? "Exporting..." : "Export All (30 days)") {
+                            Task {
+                                await exportAll()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isExporting)
+                        .accessibilityIdentifier("exportAllButton")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isExporting)
-                    .accessibilityIdentifier("exportSleepButton")
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Exports: sleep → /ingest/sleep, vitals → /ingest/vitals, body → /ingest/body, lifestyle → /ingest/lifestyle, activity → /ingest/activity")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -109,22 +126,18 @@ struct ContentView: View {
 
     @MainActor
     private func exportSleep() async {
-        let trimmedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmedURL), let scheme = url.scheme, let host = url.host, !scheme.isEmpty, !host.isEmpty else {
-            exportStatusTitle = "Export failed"
-            exportStatusDetail = "Enter a valid server URL such as http://100.x.x.x:7980."
-            exportStatusTone = .failure
+        guard let exportContext = makeExportContext() else {
             return
         }
 
         isExporting = true
         exportStatusTitle = "Exporting sleep data"
-        exportStatusDetail = "Fetching the last 30 days from HealthKit and sending them to \(trimmedURL)."
+        exportStatusDetail = "Fetching the last 30 days from HealthKit and sending sleep samples to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
         do {
             let samples = try await model.fetchSleepSamples(days: 30)
-            let response = try await ingestClient.ingestSleep(serverURL: url, samples: samples)
+            let response = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: samples)
             exportStatusTitle = "Export succeeded"
             exportStatusDetail = "Sent \(samples.count) samples. Server status: \(response.status), upserted: \(response.upserted), total_samples: \(response.totalSamples)."
             exportStatusTone = .success
@@ -135,6 +148,61 @@ struct ContentView: View {
         }
 
         isExporting = false
+    }
+
+    @MainActor
+    private func exportAll() async {
+        guard let exportContext = makeExportContext() else {
+            return
+        }
+
+        isExporting = true
+        exportStatusTitle = "Exporting all HealthKit data"
+        exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, and activity samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
+        exportStatusTone = .neutral
+
+        do {
+            let sleepSamples = try await model.fetchSleepSamples(days: 30)
+            let vitalsSamples = try await model.fetchVitalsSamples(days: 30)
+            let bodySamples = try await model.fetchBodySamples(days: 30)
+            let lifestyleSamples = try await model.fetchLifestyleSamples(days: 30)
+            let activitySamples = try await model.fetchActivitySamples(days: 30)
+
+            let sleepResponse = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: sleepSamples)
+            let vitalsResponse = try await ingestClient.ingestVitals(serverURL: exportContext.url, samples: vitalsSamples)
+            let bodyResponse = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: bodySamples)
+            let lifestyleResponse = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: lifestyleSamples)
+            let activityResponse = try await ingestClient.ingestActivity(serverURL: exportContext.url, samples: activitySamples)
+
+            exportStatusTitle = "Export succeeded"
+            exportStatusDetail = [
+                "sleep: sent \(sleepSamples.count), upserted \(sleepResponse.upserted)",
+                "vitals: sent \(vitalsSamples.count), upserted \(vitalsResponse.upserted)",
+                "body: sent \(bodySamples.count), upserted \(bodyResponse.upserted)",
+                "lifestyle: sent \(lifestyleSamples.count), upserted \(lifestyleResponse.upserted)",
+                "activity: sent \(activitySamples.count), upserted \(activityResponse.upserted)",
+            ].joined(separator: "\n")
+            exportStatusTone = .success
+        } catch {
+            exportStatusTitle = "Export failed"
+            exportStatusDetail = error.localizedDescription
+            exportStatusTone = .failure
+        }
+
+        isExporting = false
+    }
+
+    @MainActor
+    private func makeExportContext() -> ExportContext? {
+        let trimmedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmedURL), let scheme = url.scheme, let host = url.host, !scheme.isEmpty, !host.isEmpty else {
+            exportStatusTitle = "Export failed"
+            exportStatusDetail = "Enter a valid server URL such as http://100.x.x.x:7996."
+            exportStatusTone = .failure
+            return nil
+        }
+
+        return ExportContext(url: url, trimmedURL: trimmedURL)
     }
 }
 
@@ -168,4 +236,9 @@ private enum ExportStatusTone {
             return Color.red.opacity(0.12)
         }
     }
+}
+
+private struct ExportContext {
+    let url: URL
+    let trimmedURL: String
 }
