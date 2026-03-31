@@ -24,6 +24,7 @@ from health_quantification.storage import (
     query_lifestyle_samples,
     query_sleep_samples,
     query_vitals_samples,
+    record_sample,
 )
 
 
@@ -70,6 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
     db = subparsers.add_parser("db")
     db_sub = db.add_subparsers(dest="db_command", required=True)
     db_sub.add_parser("init")
+
+    record = subparsers.add_parser("record")
+    record.add_argument(
+        "data_type", choices=["lifestyle", "body", "vitals", "activity", "sleep"]
+    )
+    record.add_argument("--metric", required=True)
+    record.add_argument("--value", type=float, required=True)
+    record.add_argument("--unit", required=True)
+    record.add_argument("--time")
+    record.add_argument("--source")
+    record.add_argument("--note")
 
     summary = subparsers.add_parser("summary")
     summary_sub = summary.add_subparsers(dest="summary_command", required=True)
@@ -169,6 +181,34 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "db" and args.db_command == "init":
         initialize_database(settings.db_path)
         print(json.dumps({"status": "initialized", "db_path": str(settings.db_path)}, indent=2))
+        return 0
+
+    if args.command == "record":
+        initialize_database(settings.db_path)
+        metadata: dict[str, object] = {}
+        if args.note:
+            metadata["note"] = args.note
+        sample: dict[str, object] = {
+            "source": args.source,
+            "metadata": metadata,
+        }
+        if args.data_type == "sleep":
+            sample["start_at"] = args.time
+            sample["end_at"] = args.time
+            sample["stage"] = args.metric
+            sample["stage_value"] = int(args.value)
+        elif args.data_type == "activity":
+            sample["start_at"] = args.time
+            sample["metric_type"] = args.metric
+            sample["value"] = args.value
+            sample["unit"] = args.unit
+        else:
+            sample["recorded_at"] = args.time
+            sample["metric_type"] = args.metric
+            sample["value"] = args.value
+            sample["unit"] = args.unit
+        result = record_sample(settings.db_path, args.data_type, sample)
+        print(json.dumps(result, indent=2, sort_keys=True))
         return 0
 
     if args.command == "summary" and args.summary_command == "daily":

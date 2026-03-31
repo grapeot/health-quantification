@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -361,6 +363,71 @@ def upsert_activity_samples(db_path: Path, samples: list[dict[str, object]]) -> 
         conflict_columns=("source", "source_id"),
         samples=prepared_samples,
     )
+
+
+def record_sample(
+    db_path: Path, data_type: str, sample: dict[str, object]
+) -> dict[str, object]:
+    normalized_sample = dict(sample)
+    metadata = normalized_sample.get("metadata")
+    metadata_json = normalized_sample.get("metadata_json")
+    if metadata is None and metadata_json is not None:
+        if isinstance(metadata_json, str):
+            normalized_sample["metadata"] = json.loads(metadata_json)
+        else:
+            normalized_sample["metadata"] = metadata_json
+
+    source_id = str(normalized_sample.get("source_id") or str(uuid.uuid4()))
+    source = str(normalized_sample.get("source") or "ai_manual")
+    current_time = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    normalized_sample["source_id"] = source_id
+    normalized_sample["source"] = source
+
+    if data_type == "sleep":
+        start_at = str(normalized_sample.get("start_at") or current_time)
+        end_at = str(normalized_sample.get("end_at") or start_at)
+        normalized_sample["start_at"] = start_at
+        normalized_sample["end_at"] = end_at
+        upsert_sleep_samples(db_path, [normalized_sample])
+        metric_type = str(normalized_sample["stage"])
+        value = normalized_sample["stage_value"]
+    elif data_type == "activity":
+        start_at = str(normalized_sample.get("start_at") or current_time)
+        normalized_sample["start_at"] = start_at
+        upsert_activity_samples(db_path, [normalized_sample])
+        metric_type = str(normalized_sample["metric_type"])
+        value = normalized_sample["value"]
+    elif data_type == "lifestyle":
+        normalized_sample["recorded_at"] = str(
+            normalized_sample.get("recorded_at") or current_time
+        )
+        upsert_lifestyle_samples(db_path, [normalized_sample])
+        metric_type = str(normalized_sample["metric_type"])
+        value = normalized_sample["value"]
+    elif data_type == "body":
+        normalized_sample["recorded_at"] = str(
+            normalized_sample.get("recorded_at") or current_time
+        )
+        upsert_body_samples(db_path, [normalized_sample])
+        metric_type = str(normalized_sample["metric_type"])
+        value = normalized_sample["value"]
+    elif data_type == "vitals":
+        normalized_sample["recorded_at"] = str(
+            normalized_sample.get("recorded_at") or current_time
+        )
+        upsert_vitals_samples(db_path, [normalized_sample])
+        metric_type = str(normalized_sample["metric_type"])
+        value = normalized_sample["value"]
+    else:
+        raise ValueError(f"unknown data_type: {data_type}")
+
+    return {
+        "status": "recorded",
+        "source_id": source_id,
+        "data_type": data_type,
+        "metric_type": metric_type,
+        "value": value,
+    }
 
 
 def _query_samples(

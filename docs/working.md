@@ -2,6 +2,17 @@
 
 ## Changelog
 
+### 2026-03-31 (Phase 3: DB as primary storage, multi-source, AI recording)
+
+- 架构转变：SQLite 从 HealthKit 镜像升级为唯一事实来源（single source of truth）
+- 新增 CLI `record` 子命令：支持 AI/手动写入单条数据到所有表（lifestyle, body, vitals, activity, sleep）
+- storage.py 新增 `record_sample()` 函数：自动生成 source_id、默认 source=ai_manual、默认时间=当前 UTC
+- 新增 15 个测试（8 unit + 7 integration），总测试数 76，全部通过
+- PRD/RFC 更新：多数据源架构、AI 手动记录、知识库（食品/饮料咖啡因含量）、source 字段约定
+- Skill file 全面更新：AI 记录工作流、知识库、record CLI 用法、用户分析偏好（ML 背景，精确统计语言）
+- 首次 AI 记录：墨西哥可乐 500ml 48mg 咖啡因（2026-03-31 12:00 PT）
+- 综合健康分析报告（多 agent 集思广益）：docs/reports/health_synthesis_report_2026-03-31.md（gitignored）
+
 ### 2026-03-31 (ATS fix & server update)
 
 - ATS 改用 `NSAllowsArbitraryLoads` 替代 `NSExceptionDomains`，因为 iOS 不支持 `.` 开头的通配子域名（`.ts.net` 无效）。
