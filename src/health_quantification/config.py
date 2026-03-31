@@ -27,7 +27,7 @@ def load_settings() -> Settings:
     timezone = os.getenv("HEALTH_QUANT_TIMEZONE", "America/Los_Angeles")
     live_tests_enabled = os.getenv("HEALTH_QUANT_ENABLE_LIVE_TESTS", "0") == "1"
     server_host = os.getenv("HEALTH_QUANT_SERVER_HOST", "0.0.0.0")
-    server_port = int(os.getenv("HEALTH_QUANT_SERVER_PORT", "7980"))
+    server_port = int(os.getenv("HEALTH_QUANT_SERVER_PORT", "7996"))
     return Settings(
         db_path=db_path,
         export_dir=export_dir,

@@ -10,28 +10,39 @@
 
 用项目内稳定的 library 与 CLI 合同管理个人健康量化数据。重点是把原始 observation、日级 summary 和 artifact 保持一致，让 AI 和人类都能基于同一事实层工作。
 
-## 验收标准
+## 架构
 
-- 使用者可以通过 `python -m health_quantification.cli doctor config` 确认配置状态
-- 使用者可以通过 `db init` 初始化本地数据库
-- 使用者可以通过 `summary daily` 获取稳定 JSON
-- 使用者可以通过 `artifact daily-card` 产出一张日级卡片
-- 任何新增数据源都必须落在既有模块边界内，不把分析逻辑写进 adapter 或 shell
+三层分离：
+
+1. **采集层**：iOS app（`HealthQuantification/HealthQuantificationIOS/`），HealthKit 读取 + POST 到 FastAPI
+2. **写入层**：FastAPI server（`src/health_quantification/server.py`），pm2 管理，端口 7996
+3. **分析层**：Python CLI（`src/health_quantification/cli.py`），只读查询 SQLite
 
 ## 关键边界
 
 - 真正逻辑只放在 `src/health_quantification/`
 - `scripts/health_quant` 是稳定 wrapper，不写业务逻辑
-- `native/apple_health_exporter/` 只负责未来 Apple Health 原始采集，不负责分析
+- iOS 代码只负责 HealthKit 采集和 HTTP POST，不做分析
 - 不把真实个人健康数据提交到 git
 - `docs/working.md` 记录变更与踩坑结论
+- HealthKit 时间戳是 UTC，分析时需转换到用户时区（默认 `America/Los_Angeles`）
+
+## CLI 合同
+
+```bash
+python -m health_quantification.cli doctor config
+python -m health_quantification.cli db init
+python -m health_quantification.cli sleep analyze --days 30 --format json
+python -m health_quantification.cli sleep daily --date YYYY-MM-DD --format json
+python -m health_quantification.cli artifact daily-card --date YYYY-MM-DD --output <path>
+```
 
 ## 建议工作流
 
-优先顺序应当是：先确认配置和本地数据库，再看 summary contract，最后看 artifact。需要新接一个数据源时，先修改 schema / ingestion 边界，再决定是否需要新的 CLI 子命令。
+分析睡眠数据时：先确认后端运行（`curl localhost:7996/health`），再用 `sleep analyze` 获取汇总。日级数据用 `sleep daily`，可视化用 `artifact daily-card`。
 
 ## 已知限制
 
-- 当前 phase 1 没有真实 Apple Health ingest 能力
-- 当前 artifact 只是一张最小 SVG 卡片，不代表最终 UI 方向
-- live integration tests 还只是保留位，真实接入后再补
+- 当前只有睡眠数据，HRV/步数/体重等 Phase 2
+- Apple Watch 午睡追踪精度低，通常只有 1 条 `asleep_unspecified`
+- 跨午夜数据按用户本地时区归属日期
