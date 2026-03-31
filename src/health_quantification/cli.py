@@ -6,16 +6,23 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from health_quantification.analysis.daily_summary import build_default_daily_summary
 from health_quantification.analysis.sleep import (
     DaySleepMetrics,
     assign_samples_to_days,
     compute_analysis,
     compute_day_metrics,
 )
-from health_quantification.artifacts.chart import render_daily_card_svg
+from health_quantification.artifacts.report import (
+    render_analysis_report_md,
+    render_bar_chart_svg,
+    render_daily_report_md,
+)
 from health_quantification.config import load_settings
 from health_quantification.storage import initialize_database, query_sleep_samples
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+REPORTS_DIR = PROJECT_ROOT / "docs" / "reports"
+ASSETS_DIR = PROJECT_ROOT / "docs" / "assets"
 
 
 def _check_data_freshness(days_map: dict[str, list[dict[str, object]]], tz_name: str) -> None:
@@ -56,16 +63,21 @@ def build_parser() -> argparse.ArgumentParser:
     sleep_analyze = sleep_sub.add_parser("analyze")
     sleep_analyze.add_argument("--days", type=int, default=30)
     sleep_analyze.add_argument("--format", choices=["json", "text"], default="json")
+    sleep_analyze.add_argument("--report", action="store_true", help="Generate MD report in docs/reports/")
 
     sleep_daily = sleep_sub.add_parser("daily")
     sleep_daily.add_argument("--date", required=True)
     sleep_daily.add_argument("--format", choices=["json", "text"], default="json")
+    sleep_daily.add_argument("--report", action="store_true", help="Generate MD report in docs/reports/")
 
-    artifact = subparsers.add_parser("artifact")
-    artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
-    daily_card = artifact_sub.add_parser("daily-card")
-    daily_card.add_argument("--date", required=True)
-    daily_card.add_argument("--output", required=True)
+    report = subparsers.add_parser("report")
+    report_sub = report.add_subparsers(dest="report_command", required=True)
+
+    report_daily = report_sub.add_parser("daily")
+    report_daily.add_argument("--date", required=True)
+
+    report_analyze = report_sub.add_parser("analyze")
+    report_analyze.add_argument("--days", type=int, default=30)
 
     return parser
 
@@ -85,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "summary" and args.summary_command == "daily":
+        from health_quantification.analysis.daily_summary import build_default_daily_summary
         summary = build_default_daily_summary(args.date, settings.timezone)
         if args.format == "json":
             print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
@@ -98,7 +111,13 @@ def main(argv: list[str] | None = None) -> int:
         days_map = assign_samples_to_days(samples, settings.timezone)
         _check_data_freshness(days_map, settings.timezone)
         analysis = compute_analysis(samples, args.days, settings.timezone)
-        if args.format == "json":
+        if args.report:
+            chart_path = ASSETS_DIR / "sleep_trend.svg"
+            render_bar_chart_svg(analysis, chart_path)
+            report_path = REPORTS_DIR / f"sleep_analysis_{args.days}d.md"
+            render_analysis_report_md(analysis, report_path, chart_path)
+            print(json.dumps({"report": str(report_path), "chart": str(chart_path)}, indent=2))
+        elif args.format == "json":
             print(json.dumps(analysis.to_dict(), indent=2, default=str))
         else:
             print(f"Period: {analysis.period_days} days | Samples: {analysis.total_samples}")
@@ -123,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         _check_data_freshness(days_map, settings.timezone)
         day_samples = days_map.get(args.date, [])
         metrics = compute_day_metrics(day_samples, args.date, settings.timezone)
-        if args.format == "json":
+        if args.report:
+            report_path = REPORTS_DIR / f"sleep_{args.date}.md"
+            render_daily_report_md(metrics, report_path)
+            print(json.dumps({"report": str(report_path)}, indent=2))
+        elif args.format == "json":
             print(json.dumps(metrics.to_dict(), indent=2))
         else:
             print(f"Date: {metrics.date} | Samples: {metrics.sample_count}")
@@ -137,14 +160,29 @@ def main(argv: list[str] | None = None) -> int:
                 print("(nap)")
         return 0
 
-    if args.command == "artifact" and args.artifact_command == "daily-card":
+    if args.command == "report" and args.report_command == "daily":
         initialize_database(settings.db_path)
         samples = query_sleep_samples(db_path=settings.db_path)
-        metrics = compute_day_metrics(samples, args.date, settings.timezone)
-        summary = build_default_daily_summary(args.date, settings.timezone)
-        summary.sleep_hours = metrics.total_sleep_hours
-        output = render_daily_card_svg(summary, Path(args.output))
-        print(json.dumps({"status": "written", "output": str(output)}, indent=2))
+        days_map = assign_samples_to_days(samples, settings.timezone)
+        _check_data_freshness(days_map, settings.timezone)
+        day_samples = days_map.get(args.date, [])
+        metrics = compute_day_metrics(day_samples, args.date, settings.timezone)
+        report_path = REPORTS_DIR / f"sleep_{args.date}.md"
+        render_daily_report_md(metrics, report_path)
+        print(json.dumps({"report": str(report_path)}, indent=2))
+        return 0
+
+    if args.command == "report" and args.report_command == "analyze":
+        initialize_database(settings.db_path)
+        samples = query_sleep_samples(db_path=settings.db_path)
+        days_map = assign_samples_to_days(samples, settings.timezone)
+        _check_data_freshness(days_map, settings.timezone)
+        analysis = compute_analysis(samples, args.days, settings.timezone)
+        chart_path = ASSETS_DIR / "sleep_trend.svg"
+        render_bar_chart_svg(analysis, chart_path)
+        report_path = REPORTS_DIR / f"sleep_analysis_{args.days}d.md"
+        render_analysis_report_md(analysis, report_path, chart_path)
+        print(json.dumps({"report": str(report_path), "chart": str(chart_path)}, indent=2))
         return 0
 
     parser.error("unsupported command")

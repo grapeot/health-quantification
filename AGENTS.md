@@ -30,8 +30,11 @@ python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json
 python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
-python -m health_quantification.cli artifact daily-card --date 2026-03-30 --output docs/assets/daily_card.svg
+python -m health_quantification.cli report analyze --days 30
+python -m health_quantification.cli report daily --date 2026-03-30
 ```
+
+Reports output to `docs/reports/` (MD), charts to `docs/assets/` (SVG).
 
 ## 代码边界
 

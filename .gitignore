@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 .env
 *.db
+docs/reports/
 data/raw/*
 data/exports/*
 !data/raw/.gitkeep
