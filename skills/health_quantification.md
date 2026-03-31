@@ -49,7 +49,7 @@ AI 完全控制分析过程。典型工作流：
 1. 调用 CLI 获取 JSON 数据：`sleep analyze --days 30 --format json`
 2. 基于数据自由分析（趋势、异常、对比、阶段分解等）
 3. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表
-4. 撰写 Markdown 报告，引用 `../assets/` 下的 PNG 图片
+4. 撰写 Markdown 报告，图片引用路径使用**从 workspace root 出发的相对路径**（如 `docs/assets/chart_sleep_duration.png`），**不要使用 `../`**。iOS client 的 PathNormalizer 会过滤 `..` segment 导致路径解析失败。
 5. 输出到 `docs/reports/`，文件名由 AI 决定
 
 `artifacts/report.py` 提供 `render_bar_chart_png()` 和 `render_comparison_chart_png()` 两个辅助函数，AI 也可以直接用 matplotlib 自行绘制任意图表。
