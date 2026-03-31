@@ -38,6 +38,8 @@
 - CLI 新增 `sleep analyze --days N` 和 `sleep daily --date` 子命令，支持 json/text 输出。19 pytest 通过。
 - 跨午夜睡眠分配：使用 sample 的 end_at（而非 start_at）来确定归属日期，避免夜间睡眠被拆分到两天。nap 检测使用 has_overnight + total_sleep < 3h 双条件。
 - bedtime/wake_time 计算存在已知限制：cross-midnight split 导致某些天的 wake_time 不准确，需要 session segmentation 来精确识别主睡眠窗口。
+- 替换 SVG daily card 为 MD 报告系统。报告输出到 `docs/reports/`（.gitignore 排除），图表输出到 `docs/assets/`（SVG）。CLI 新增 `report daily` 和 `report analyze` 子命令，AI 自由决定文件名。
+- Skill 通过 symlink 注册到 `rules/skills/health_quantification.md`，从 workspace 根目录也可通过自然语言调用。
 
 ## Lessons Learned
 
