@@ -23,7 +23,7 @@ final class HealthQuantificationIOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testDoctorAndRequestSleepAccessFlow() throws {
+    func testDoctorAndRequestHealthAccessFlow() throws {
         let app = XCUIApplication()
         app.launchArguments.append("UITEST_HEALTH_DATA_AVAILABLE_TRUE")
         app.launch()
@@ -32,7 +32,7 @@ final class HealthQuantificationIOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["healthDataAvailableLabel"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["healthDataAvailable: true"].waitForExistence(timeout: 2))
 
-        app.buttons["requestSleepAccessButton"].tap()
+        app.buttons["requestHealthAccessButton"].tap()
         XCTAssertTrue(app.staticTexts["authorizationStateLabel"].waitForExistence(timeout: 2))
     }
 

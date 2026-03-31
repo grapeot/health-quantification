@@ -19,7 +19,7 @@ final class HealthKitService {
 
     var logText: String {
         if logEntries.isEmpty {
-            return "No events yet. Tap Run Doctor, Request Health Access, Export Sleep, or Export All."
+            return "No events yet. Tap Run Doctor, Request Health Access, or Export All."
         }
         return logEntries.joined(separator: "\n\n")
     }
@@ -114,7 +114,12 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(readTypes: [sleepType])
+            do {
+                try await requestReadAuthorization(readTypes: [sleepType])
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchSleepSamples", payload: ["result": "not_authorized"])
+                return []
+            }
         } else {
             authorizationState = "granted"
         }
@@ -184,7 +189,12 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+            do {
+                try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchVitalsSamples", payload: ["result": "not_authorized"])
+                return []
+            }
         } else {
             authorizationState = "granted"
         }
@@ -232,8 +242,13 @@ final class HealthKitService {
         }
 
         let quantityConfigurations = bodyQuantityConfigurations()
-        let bloodPressureType = HKObjectType.correlationType(forIdentifier: .bloodPressure)
-        let readTypes = Set(quantityConfigurations.map(\.type)).union(bloodPressureType.map { [$0] } ?? [])
+        var readTypes = Set(quantityConfigurations.map(\.type))
+        if let systolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic) {
+            readTypes.insert(systolicType)
+        }
+        if let diastolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic) {
+            readTypes.insert(diastolicType)
+        }
         guard !readTypes.isEmpty else {
             authorizationState = "body_types_unavailable"
             appendLog(title: "fetchBodySamples", payload: ["result": authorizationState])
@@ -241,7 +256,12 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(readTypes: readTypes)
+            do {
+                try await requestReadAuthorization(readTypes: readTypes)
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchBodySamples", payload: ["result": "not_authorized"])
+                return []
+            }
         } else {
             authorizationState = "granted"
         }
@@ -263,7 +283,7 @@ final class HealthKitService {
             })
         }
 
-        if let bloodPressureType {
+        if let bloodPressureType = HKObjectType.correlationType(forIdentifier: .bloodPressure) {
             let bloodPressureSamples = try await fetchBloodPressureSamples(days: days, type: bloodPressureType)
             records.append(contentsOf: bloodPressureSamples)
         }
@@ -304,7 +324,12 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+            do {
+                try await requestReadAuthorization(readTypes: Set(configurations.map(\.type)))
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchLifestyleSamples", payload: ["result": "not_authorized"])
+                return []
+            }
         } else {
             authorizationState = "granted"
         }
@@ -358,7 +383,12 @@ final class HealthKitService {
         }
 
         if !isUITestMockHealthDataAvailable {
-            try await requestReadAuthorization(readTypes: [stepCountType])
+            do {
+                try await requestReadAuthorization(readTypes: [stepCountType])
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchActivitySamples", payload: ["result": "not_authorized"])
+                return []
+            }
         } else {
             authorizationState = "granted"
         }
@@ -576,8 +606,13 @@ final class HealthKitService {
         for configuration in lifestyleQuantityConfigurations() {
             readTypes.insert(configuration.type)
         }
-        if let bloodPressureType = HKObjectType.correlationType(forIdentifier: .bloodPressure) {
-            readTypes.insert(bloodPressureType)
+        // Blood pressure: request authorization for the individual quantity types,
+        // NOT the correlation type (HealthKit disallows auth requests on HKCorrelationType)
+        if let systolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic) {
+            readTypes.insert(systolicType)
+        }
+        if let diastolicType = HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic) {
+            readTypes.insert(diastolicType)
         }
         if let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) {
             readTypes.insert(stepCountType)

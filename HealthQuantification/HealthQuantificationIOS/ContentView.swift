@@ -25,7 +25,7 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
 
-                Text("Minimal HealthKit validation client")
+                Text("Export HealthKit data to your backend")
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
@@ -39,7 +39,7 @@ struct ContentView: View {
                         model.requestHealthAccess()
                     }
                     .buttonStyle(.bordered)
-                    .accessibilityIdentifier("requestSleepAccessButton")
+                    .accessibilityIdentifier("requestHealthAccessButton")
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -53,25 +53,14 @@ struct ContentView: View {
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("serverURLField")
 
-                    HStack(spacing: 12) {
-                        Button(isExporting ? "Exporting..." : "Export Sleep (30 days)") {
-                            Task {
-                                await exportSleep()
-                            }
+                    Button(isExporting ? "Exporting..." : "Export All (30 days)") {
+                        Task {
+                            await exportAll()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isExporting)
-                        .accessibilityIdentifier("exportSleepButton")
-
-                        Button(isExporting ? "Exporting..." : "Export All (30 days)") {
-                            Task {
-                                await exportAll()
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isExporting)
-                        .accessibilityIdentifier("exportAllButton")
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isExporting)
+                    .accessibilityIdentifier("exportAllButton")
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -125,32 +114,6 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func exportSleep() async {
-        guard let exportContext = makeExportContext() else {
-            return
-        }
-
-        isExporting = true
-        exportStatusTitle = "Exporting sleep data"
-        exportStatusDetail = "Fetching the last 30 days from HealthKit and sending sleep samples to \(exportContext.trimmedURL)."
-        exportStatusTone = .neutral
-
-        do {
-            let samples = try await model.fetchSleepSamples(days: 30)
-            let response = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: samples)
-            exportStatusTitle = "Export succeeded"
-            exportStatusDetail = "Sent \(samples.count) samples. Server status: \(response.status), upserted: \(response.upserted), total_samples: \(response.totalSamples)."
-            exportStatusTone = .success
-        } catch {
-            exportStatusTitle = "Export failed"
-            exportStatusDetail = error.localizedDescription
-            exportStatusTone = .failure
-        }
-
-        isExporting = false
-    }
-
-    @MainActor
     private func exportAll() async {
         guard let exportContext = makeExportContext() else {
             return
@@ -161,33 +124,71 @@ struct ContentView: View {
         exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, and activity samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
+        var resultLines: [String] = []
+        var hadFailure = false
+        var hadSuccess = false
+
         do {
-            let sleepSamples = try await model.fetchSleepSamples(days: 30)
-            let vitalsSamples = try await model.fetchVitalsSamples(days: 30)
-            let bodySamples = try await model.fetchBodySamples(days: 30)
-            let lifestyleSamples = try await model.fetchLifestyleSamples(days: 30)
-            let activitySamples = try await model.fetchActivitySamples(days: 30)
-
-            let sleepResponse = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: sleepSamples)
-            let vitalsResponse = try await ingestClient.ingestVitals(serverURL: exportContext.url, samples: vitalsSamples)
-            let bodyResponse = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: bodySamples)
-            let lifestyleResponse = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: lifestyleSamples)
-            let activityResponse = try await ingestClient.ingestActivity(serverURL: exportContext.url, samples: activitySamples)
-
-            exportStatusTitle = "Export succeeded"
-            exportStatusDetail = [
-                "sleep: sent \(sleepSamples.count), upserted \(sleepResponse.upserted)",
-                "vitals: sent \(vitalsSamples.count), upserted \(vitalsResponse.upserted)",
-                "body: sent \(bodySamples.count), upserted \(bodyResponse.upserted)",
-                "lifestyle: sent \(lifestyleSamples.count), upserted \(lifestyleResponse.upserted)",
-                "activity: sent \(activitySamples.count), upserted \(activityResponse.upserted)",
-            ].joined(separator: "\n")
-            exportStatusTone = .success
+            let samples = try await model.fetchSleepSamples(days: 30)
+            let response = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: samples)
+            resultLines.append("sleep: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
         } catch {
+            resultLines.append("sleep: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        do {
+            let samples = try await model.fetchVitalsSamples(days: 30)
+            let response = try await ingestClient.ingestVitals(serverURL: exportContext.url, samples: samples)
+            resultLines.append("vitals: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
+        } catch {
+            resultLines.append("vitals: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        do {
+            let samples = try await model.fetchBodySamples(days: 30)
+            let response = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: samples)
+            resultLines.append("body: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
+        } catch {
+            resultLines.append("body: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        do {
+            let samples = try await model.fetchLifestyleSamples(days: 30)
+            let response = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: samples)
+            resultLines.append("lifestyle: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
+        } catch {
+            resultLines.append("lifestyle: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        do {
+            let samples = try await model.fetchActivitySamples(days: 30)
+            let response = try await ingestClient.ingestActivity(serverURL: exportContext.url, samples: samples)
+            resultLines.append("activity: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
+        } catch {
+            resultLines.append("activity: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        if hadSuccess && hadFailure {
+            exportStatusTitle = "Export partial"
+            exportStatusTone = .partial
+        } else if hadSuccess {
+            exportStatusTitle = "Export succeeded"
+            exportStatusTone = .success
+        } else {
             exportStatusTitle = "Export failed"
-            exportStatusDetail = error.localizedDescription
             exportStatusTone = .failure
         }
+        exportStatusDetail = resultLines.joined(separator: "\n")
 
         isExporting = false
     }
@@ -213,6 +214,7 @@ struct ContentView: View {
 private enum ExportStatusTone {
     case neutral
     case success
+    case partial
     case failure
 
     var color: Color {
@@ -221,6 +223,8 @@ private enum ExportStatusTone {
             return .primary
         case .success:
             return .green
+        case .partial:
+            return .orange
         case .failure:
             return .red
         }
@@ -232,6 +236,8 @@ private enum ExportStatusTone {
             return Color(uiColor: .secondarySystemBackground)
         case .success:
             return Color.green.opacity(0.12)
+        case .partial:
+            return Color.orange.opacity(0.12)
         case .failure:
             return Color.red.opacity(0.12)
         }

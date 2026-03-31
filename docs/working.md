@@ -2,6 +2,16 @@
 
 ## Changelog
 
+### 2026-03-31 (UI simplification & partial auth handling)
+
+- UI 简化：移除 "Export Sleep (30 days)" 按钮，只保留一个 "Export All (30 days)" 按钮；更新副标题为 "Export HealthKit data to your backend"。
+- 移除 `requestSleepAccess()` wrapper 方法，统一使用 `requestHealthAccess()`。
+- 修复 `fetchBodySamples()` 中的血压授权 bug：与 `readTypesForExport()` 相同的问题——不能对 `HKCorrelationType` 请求授权，改为请求 `bloodPressureSystolic` 和 `bloodPressureDiastolic` 两个 quantity type。
+- 每个 `fetch*Samples()` 方法现在优雅处理部分授权拒绝：捕获 `HealthKitServiceError.authorizationDenied`，返回空数组并记录日志，而不是抛出异常。
+- `exportAll()` 改为按类别独立 try/catch：某个类别失败不影响其他类别继续导出；全部失败显示红色，部分失败显示橙色，全部成功显示绿色。
+- UI 测试 `testDoctorAndRequestSleepAccessFlow` 重命名为 `testDoctorAndRequestHealthAccessFlow`，匹配新的 accessibility identifier。
+- xcodebuild build + test 全部通过（7 unit tests + 6 UI tests）。
+
 ### 2026-03-31 (Phase 2 iOS export implementation)
 
 - 扩展 `HealthQuantificationIOS` 的 `HealthKitService`：在保留 sleep export 流程的前提下，新增 vitals、body、lifestyle、activity 四类 HealthKit 读取逻辑，并把授权范围扩展到 RFC 要求的全部类型。
