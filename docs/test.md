@@ -2,63 +2,67 @@
 
 ## 目标
 
-这个项目的测试要同时验证三件事：第一，配置与存储层的默认 contract 可用；第二，library 和薄 CLI 的接缝稳定；第三，未来真实健康数据接入不会被默认误触发。
+验证三件事：Python 侧的模型/存储/HTTP 合同稳定，iOS 侧编解码与 stage 映射正确，端到端 ingestion 管道（iOS → FastAPI → SQLite）幂等且数据完整。
 
-## Unit tests
+## Python 测试
 
-unit tests 只覆盖纯逻辑，不依赖真实健康数据或原生 adapter：
+### Unit tests（`tests/unit/`）
 
-- 默认配置解析
-- SQLite schema 初始化
-- 日级 summary 的默认结构
-- daily card SVG 输出的关键字段
+纯逻辑，不依赖外部服务或真实数据：
 
-这层测试必须快，能在空仓状态下直接运行。
+- `test_server_models.py`：Pydantic 模型验证（合法 payload 接受、缺字段拒绝、类型错误拒绝、未知字段拒绝）
+- `test_daily_summary.py`：日级 summary 默认结构
 
-## Mocked integration tests
+### Integration tests（`tests/integration/`）
 
-mocked integration tests 用临时目录或临时数据库验证端到端接缝：
+用临时 SQLite 验证端到端接缝，所有测试自包含，不需要跑真实 FastAPI 进程：
 
-- `db init` 能创建数据库文件和表结构
-- `summary daily` 能输出稳定 JSON schema
-- `artifact daily-card` 能写出 SVG 文件
-- CLI 参数能正确传递给 library
+- `test_server.py`：HTTP 合同测试（POST 接受、幂等 upsert、日期过滤、DELETE 清理、/health、422 校验），使用 `httpx.AsyncClient` + `ASGITransport` 直接调 FastAPI app
+- `test_cli.py`：CLI smoke test
 
-这层测试不访问真实 HealthKit，不读取真实个人数据。
+## iOS 测试（`HealthQuantification/HealthQuantificationIOSTests/`）
+
+- `HealthKitServiceTests.swift`：HealthKit stage → ingestion stage 映射
+- `IngestClientTests.swift`：`SleepSampleRecord` / `IngestEnvelope` JSON 编解码，验证与 FastAPI Pydantic 模型兼容
+
+通过 `xcodebuild test -scheme HealthQuantificationIOS` 运行。
 
 ## Live integration tests
 
-live integration tests 只保留骨架，用于未来验证真实 adapter：
+骨架已保留，用于未来验证真实 adapter。默认 skip，只有 `HEALTH_QUANT_ENABLE_LIVE_TESTS=1` 时运行。
 
-- 能加载真实 native exporter 输出
-- 能 ingest 一份真实 Apple Health snapshot
-- 能把真实 observation 转成 summary 与 artifact
+## 真实数据验证（手工）
 
-这层测试默认必须 skip。只有显式设置 `HEALTH_QUANT_ENABLE_LIVE_TESTS=1`，并且调用方确认数据来源安全时，才允许运行。
+iOS 真机 export 后，通过 API 确认数据完整性：
+
+```bash
+curl -s http://localhost:7996/ingest/sleep | python3 -c "
+import json, sys; data = json.load(sys.stdin)
+print(f'Total: {len(data)}, Days: {len(set(s[\"start_at\"][:10] for s in data))}')
+print(f'Stages: {dict()}')  # 检查 stage 分布是否合理
+print(f'Dupes: {len([s[\"source_id\"] for s in data]) - len(set(s[\"source_id\"] for s in data))}')
+"
+```
+
+已验证（2026-03-30）：813 samples, 30 天, 0 重复, stage 分布符合预期。
 
 ## 运行方式
 
-默认：
-
+Python：
 ```bash
 .venv/bin/python -m pytest -v
 ```
 
-显式 live：
-
+iOS（需 Xcode + 真机或 simulator）：
 ```bash
-HEALTH_QUANT_ENABLE_LIVE_TESTS=1 .venv/bin/python -m pytest -v -m live_integration
+cd HealthQuantification
+xcodebuild test -scheme HealthQuantificationIOS -destination 'platform=iOS,name=My iPhone'
 ```
 
 ## 手工 smoke checks
 
-每次重要改动后，至少检查：
-
 ```bash
 .venv/bin/python -m health_quantification.cli doctor config
 .venv/bin/python -m health_quantification.cli db init
-.venv/bin/python -m health_quantification.cli summary daily --date 2026-03-30 --format json
-.venv/bin/python -m health_quantification.cli artifact daily-card --date 2026-03-30 --output docs/assets/daily_card.svg
+curl -s http://localhost:7996/health
 ```
-
-如果当前环境没有真实 native adapter 或真实健康数据，只做默认测试和这些 smoke checks。
