@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620" viewBox="0 0 960 620">
+  <rect width="960" height="620" fill="#0f172a" rx="16"/>
+  <text x="48" y="52" fill="#e2e8f0" font-size="28" font-family="Menlo, monospace">Sleep: Before vs After</text>
+  <text x="48" y="82" fill="#94a3b8" font-size="18" font-family="Menlo, monospace">Before: up to Thu 3/26 (26 days) | After: Fri 3/27+ (4 days)</text>
+
+  <line x1="48" y1="100" x2="912" y2="100" stroke="#334155" stroke-width="1"/>
+
+  <text x="60" y="135" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">Metric</text>
+  <text x="280" y="135" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">Before</text>
+  <text x="520" y="135" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">After</text>
+  <text x="740" y="135" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">Delta</text>
+
+  <text x="60" y="170" fill="#f8fafc" font-size="20" font-family="Menlo, monospace">Total Sleep</text>
+  <rect x="280" y="154" width="123" height="22" rx="6" fill="#3b82f6" opacity="0.7"/>
+  <text x="411" y="170" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">6.16h</text>
+  <rect x="520" y="154" width="111" height="22" rx="6" fill="#8b5cf6" opacity="0.7"/>
+  <text x="639" y="170" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">5.57h</text>
+  <text x="740" y="170" fill="#f87171" font-size="20" font-family="Menlo, monospace" font-weight="bold">-0.59h</text>
+
+  <text x="60" y="225" fill="#f8fafc" font-size="20" font-family="Menlo, monospace">Deep Sleep</text>
+  <rect x="280" y="209" width="14" height="22" rx="6" fill="#3b82f6" opacity="0.7"/>
+  <text x="302" y="225" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">0.7h</text>
+  <rect x="520" y="209" width="15" height="22" rx="6" fill="#8b5cf6" opacity="0.7"/>
+  <text x="543" y="225" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">0.73h</text>
+  <text x="740" y="225" fill="#4ade80" font-size="20" font-family="Menlo, monospace" font-weight="bold">+0.03h</text>
+
+  <text x="60" y="280" fill="#f8fafc" font-size="20" font-family="Menlo, monospace">Core Sleep</text>
+  <rect x="280" y="264" width="79" height="22" rx="6" fill="#3b82f6" opacity="0.7"/>
+  <text x="367" y="280" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">3.93h</text>
+  <rect x="520" y="264" width="70" height="22" rx="6" fill="#8b5cf6" opacity="0.7"/>
+  <text x="598" y="280" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">3.52h</text>
+  <text x="740" y="280" fill="#f87171" font-size="20" font-family="Menlo, monospace" font-weight="bold">-0.41h</text>
+
+  <text x="60" y="335" fill="#f8fafc" font-size="20" font-family="Menlo, monospace">REM Sleep</text>
+  <rect x="280" y="319" width="26" height="22" rx="6" fill="#3b82f6" opacity="0.7"/>
+  <text x="314" y="335" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">1.28h</text>
+  <rect x="520" y="319" width="27" height="22" rx="6" fill="#8b5cf6" opacity="0.7"/>
+  <text x="555" y="335" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">1.33h</text>
+  <text x="740" y="335" fill="#4ade80" font-size="20" font-family="Menlo, monospace" font-weight="bold">+0.05h</text>
+
+  <text x="60" y="390" fill="#f8fafc" font-size="20" font-family="Menlo, monospace">Efficiency</text>
+  <rect x="280" y="374" width="1860" height="22" rx="6" fill="#3b82f6" opacity="0.7"/>
+  <text x="2148" y="390" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">93.01%</text>
+  <rect x="520" y="374" width="1781" height="22" rx="6" fill="#8b5cf6" opacity="0.7"/>
+  <text x="2309" y="390" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">89.07%</text>
+  <text x="740" y="390" fill="#4ade80" font-size="20" font-family="Menlo, monospace" font-weight="bold">-3.94%</text>
+
+  <line x1="48" y1="455" x2="912" y2="455" stroke="#334155" stroke-width="1"/>
+
+  <text x="60" y="485" fill="#94a3b8" font-size="16" font-family="Menlo, monospace">Daily trend (last 10 days):</text>
+
+  <text x="60" y="505" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-21</text>
+  <rect x="140" y="493" width="545" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="693" y="505" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">7.78h</text>
+
+  <text x="60" y="533" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-22</text>
+  <rect x="140" y="521" width="542" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="690" y="533" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">7.74h</text>
+
+  <text x="60" y="561" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-23</text>
+  <rect x="140" y="549" width="453" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="601" y="561" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">6.47h</text>
+
+  <text x="60" y="589" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-24</text>
+  <rect x="140" y="577" width="528" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="676" y="589" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">7.55h</text>
+
+  <text x="60" y="617" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-25</text>
+  <rect x="140" y="605" width="262" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="410" y="617" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">3.74h</text>
+
+  <text x="60" y="645" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-26</text>
+  <rect x="140" y="633" width="454" height="18" rx="4" fill="#3b82f6" opacity="0.7"/>
+  <text x="602" y="645" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">6.49h</text>
+
+  <text x="60" y="673" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-27</text>
+  <rect x="140" y="661" width="326" height="18" rx="4" fill="#8b5cf6" opacity="0.7"/>
+  <text x="474" y="673" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">4.65h</text>
+
+  <text x="60" y="701" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-28</text>
+  <rect x="140" y="689" width="374" height="18" rx="4" fill="#8b5cf6" opacity="0.7"/>
+  <text x="522" y="701" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">5.35h</text>
+
+  <text x="60" y="729" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-29 *</text>
+  <rect x="140" y="717" width="111" height="18" rx="4" fill="#8b5cf6" opacity="0.7"/>
+  <text x="259" y="729" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">1.58h</text>
+
+  <text x="60" y="757" fill="#cbd5e1" font-size="14" font-family="Menlo, monospace">03-30</text>
+  <rect x="140" y="745" width="470" height="18" rx="4" fill="#8b5cf6" opacity="0.7"/>
+  <text x="618" y="757" fill="#94a3b8" font-size="14" font-family="Menlo, monospace">6.71h</text>
+</svg>

@@ -39,10 +39,11 @@ python -m health_quantification.cli artifact daily-card --date YYYY-MM-DD --outp
 
 ## 建议工作流
 
-分析睡眠数据时：先确认后端运行（`curl localhost:7996/health`），再用 `sleep analyze` 获取汇总。日级数据用 `sleep daily`，可视化用 `artifact daily-card`。
+分析睡眠数据时直接用 CLI 读 SQLite，**不需要后端运行**。后端（FastAPI）只在 iOS 同步数据时需要。如果分析结果中今天或昨天没有数据，提醒用户先打开 iOS app 同步。
 
 ## 已知限制
 
 - 当前只有睡眠数据，HRV/步数/体重等 Phase 2
 - Apple Watch 午睡追踪精度低，通常只有 1 条 `asleep_unspecified`
 - 跨午夜数据按用户本地时区归属日期
+- bedtime/wake_time 因 cross-midnight split 精度不够，需要 session segmentation 改进

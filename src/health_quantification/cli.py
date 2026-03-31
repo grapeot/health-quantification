@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from health_quantification.analysis.daily_summary import build_default_daily_summary
@@ -14,6 +16,20 @@ from health_quantification.analysis.sleep import (
 from health_quantification.artifacts.chart import render_daily_card_svg
 from health_quantification.config import load_settings
 from health_quantification.storage import initialize_database, query_sleep_samples
+
+
+def _check_data_freshness(days_map: dict[str, list[dict[str, object]]], tz_name: str) -> None:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(tz_name)
+    today = datetime.now(tz).date().isoformat()
+    yesterday = (datetime.now(tz).date() - timedelta(days=1)).isoformat()
+    missing: list[str] = []
+    if not days_map.get(today):
+        missing.append(today)
+    if not days_map.get(yesterday):
+        missing.append(yesterday)
+    if missing:
+        print(f"[WARNING] No sleep data for {', '.join(missing)}. Open the iOS app and sync for up-to-date analysis.", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sleep" and args.sleep_command == "analyze":
         initialize_database(settings.db_path)
         samples = query_sleep_samples(db_path=settings.db_path)
+        days_map = assign_samples_to_days(samples, settings.timezone)
+        _check_data_freshness(days_map, settings.timezone)
         analysis = compute_analysis(samples, args.days, settings.timezone)
         if args.format == "json":
             print(json.dumps(analysis.to_dict(), indent=2, default=str))
@@ -102,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         initialize_database(settings.db_path)
         samples = query_sleep_samples(db_path=settings.db_path)
         days_map = assign_samples_to_days(samples, settings.timezone)
+        _check_data_freshness(days_map, settings.timezone)
         day_samples = days_map.get(args.date, [])
         metrics = compute_day_metrics(day_samples, args.date, settings.timezone)
         if args.format == "json":
