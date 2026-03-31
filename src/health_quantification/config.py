@@ -21,9 +21,15 @@ class Settings:
         return data
 
 
+def _project_root() -> Path:
+    """Resolve to the project root (one level above this package directory)."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
 def load_settings() -> Settings:
-    db_path = Path(os.getenv("HEALTH_QUANT_DB_PATH", "data/health_quantification.db"))
-    export_dir = Path(os.getenv("HEALTH_QUANT_EXPORT_DIR", "data/exports"))
+    project_root = _project_root()
+    db_path = Path(os.getenv("HEALTH_QUANT_DB_PATH", str(project_root / "data" / "health_quantification.db")))
+    export_dir = Path(os.getenv("HEALTH_QUANT_EXPORT_DIR", str(project_root / "data" / "exports")))
     timezone = os.getenv("HEALTH_QUANT_TIMEZONE", "America/Los_Angeles")
     live_tests_enabled = os.getenv("HEALTH_QUANT_ENABLE_LIVE_TESTS", "0") == "1"
     server_host = os.getenv("HEALTH_QUANT_SERVER_HOST", "0.0.0.0")
