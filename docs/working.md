@@ -4,6 +4,16 @@
 
 ### 2026-03-30
 
+- 完成首次 comprehensive sleep analysis：28 个过夜夜晚的 7 维分析（duration、stages、efficiency、bedtime/waketime、weekly pattern、sleep debt、data quality），生成 7 张 PNG 图表和 1 份 MD 报告，输出到 `docs/reports/` 和 `docs/assets/`。
+- 架构调整：移除 CLI 的 `report` 子命令和 `sleep --report` flag，移除 `artifacts/report.py` 中的 hardcoded MD 模板函数。CLI 改为纯数据接口，分析和报告生成完全交给 AI。
+- `artifacts/report.py` 中的图表辅助函数从 SVG 迁移到 PNG（matplotlib），因为 SVG 在 Markdown 预览中无法渲染。
+- 新增 `scripts/gen_charts.py` 作为一次性图表生成脚本（7 种图表类型），供 AI 参考和复用。
+- 添加 `matplotlib>=3.10` 到 dev dependencies。
+- 更新 PRD、RFC、AGENTS.md、README.md、skill 文件，统一反映"CLI 只提供数据，AI 做分析"的架构原则。
+- 19 pytest 全部通过。
+
+### 2026-03-30 (earlier)
+
 - 初始化 `health_quantification` 项目骨架、文档、Python package 和 wrapper 脚本。
 - 明确 phase 1 采用 Python-first 架构，native Apple Health exporter 只保留为未来 adapter 边界。
 - 增加最小 CLI：`doctor config`、`db init`、`summary daily`、`artifact daily-card`。
@@ -22,14 +32,14 @@
 - 实现 FastAPI ingestion server（`src/health_quantification/server.py`），包含 POST/GET/DELETE `/ingest/sleep` 和 `/health` 四个端点，Pydantic 模型完整，Swagger UI 自描述。
 - 增加 `sleep_samples` 表和 `upsert_sleep_samples()`、`query_sleep_samples()`、`delete_sleep_samples()` 到 `storage.py`，使用 `(source, source_id)` 做幂等键。
 - 增加 FastAPI unit tests（模型验证）和 integration tests（HTTP 合同、幂等性、日期过滤、清理），共 12 个 pytest 全部通过。
-- 增加 `scripts/start_backend.sh` 和 `ecosystem.config.cjs`，通过 pm2 管理 FastAPI 进程，默认监听 `0.0.0.0:7996`（通过 Tailscale 域名 `quantum.tail63c3c5.ts.net` 访问）。
+- 增加 `scripts/start_backend.sh` 和 `ecosystem.config.cjs`，通过 pm2 管理 FastAPI 进程，默认监听 `0.0.0.0:7996`（通过 Tailscale 内网通信）。
 - 更新 PRD 和 RFC，明确三层分离架构：采集层（iOS）、写入层（FastAPI）、分析层（CLI）。
-- 修改 iOS `HealthQuantificationIOS` target：增加 `IngestClient`、`SleepSampleRecord`、`IngestEnvelope`，UI 增加 server URL 输入（默认 `http://quantum.tail63c3c5.ts.net:7996`）和 Export Sleep (30 days) 按钮。
+- 修改 iOS `HealthQuantificationIOS` target：增加 `IngestClient`、`SleepSampleRecord`、`IngestEnvelope`，UI 增加 server URL 输入（默认 `http://localhost:7996`）和 Export Sleep (30 days) 按钮。
 - iOS target 增加 unit tests（JSON 编解码、stage 映射）、UI tests（doctor 流程），xcodebuild 和 xcodebuild test 均通过。
 - FastAPI 已通过 pm2 启动并验证：`/health` 返回 200，`/docs` Swagger UI 可用。
 - iOS 真机验证成功：`healthDataAvailable=true`，`requestSleepAccess` 返回 `granted`。
 - 修复 pbxproj config ID 不匹配导致 iOS build 找不到目标平台的问题。macOS target 的 Debug/Release config block 被错误引用为 iOS target 的 config，导致 `SUPPORTED_PLATFORMS=macosx` 覆盖了 iOS target 级别的 `SDKROOT=iphoneos`。
-- 修复 ATS exception：`INFOPLIST_KEY_NSAppTransportSecurity` build setting 方式无法生成有效的 `NSAppTransportSecurity` dict，改用自定义 `Info.plist` 配置 `NSExceptionDomains` 白名单 `quantum.tail63c3c5.ts.net`。通过 `PBXFileSystemSynchronizedBuildFileExceptionSet` 排除 Info.plist 不被 auto-include 为资源。
+- 修复 ATS exception：`INFOPLIST_KEY_NSAppTransportSecurity` build setting 方式无法生成有效的 `NSAppTransportSecurity` dict，改用自定义 `Info.plist` 配置 `NSExceptionDomains` 白名单 `localhost`。通过 `PBXFileSystemSynchronizedBuildFileExceptionSet` 排除 Info.plist 不被 auto-include 为资源。
 - 清理 git：移除 `.build/`、`data/health_quantification.db`、xcuserdata 等已 track 的构建产物。分 5 个 commit 整理历史。
 - iOS 真机端到端验证成功：export 813 samples（30 天），全部来自 Yan's Apple Watch，stage 分布合理（core 384, awake 158, deep 156, rem 103, unspecified 12），0 重复。
 - 数据特点：所有时间戳为 UTC（需转 PDT -7 做分析）；3/7 无数据（未佩戴）；3/29 仅 1 条午睡（14:12-15:12 PDT）。
@@ -57,3 +67,4 @@
 - 使用 `PBXFileSystemSynchronizedRootGroup` 时，自定义 `Info.plist` 会被自动 include 为资源导致 "Multiple commands produce Info.plist" 错误。需要用 `PBXFileSystemSynchronizedBuildFileExceptionSet` 的 `membershipExceptions` 排除它。
 - HealthKit 导出的睡眠时间戳全部是 UTC。做日级分析时必须转换到用户时区（PDT/PST），否则跨午夜的数据会被错误地分到两天。
 - Apple Watch 午睡追踪精度低，通常只产生 1 条 `asleep_unspecified` stage，不会细分 core/deep/rem。
+- CLI 生成 hardcoded 报告是反模式。用户的分析需求高度个性化（对比周期、异常检测、因果推理），这些不可能被预编码进 Python 模板。正确做法是 CLI 只提供数据接口（JSON），AI 自行决定分析角度和报告格式。可视化用 PNG 而非 SVG，因为大部分 Markdown 渲染器不支持 SVG 内嵌。

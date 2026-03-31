@@ -30,11 +30,9 @@ python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json
 python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
-python -m health_quantification.cli report analyze --days 30
-python -m health_quantification.cli report daily --date 2026-03-30
 ```
 
-Reports output to `docs/reports/` (MD), charts to `docs/assets/` (SVG).
+CLI 只提供结构化数据（JSON/text）。分析、可视化和报告生成由 AI 完成。AI 可调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表，图表输出到 `docs/assets/`。
 
 ## 代码边界
 

@@ -7,20 +7,6 @@
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
-		3BD5686E2F7B5BDA00356C23 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3BD568582F7B5BD800356C23 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3BD5685F2F7B5BD800356C23;
-			remoteInfo = HealthQuantification;
-		};
-		3BD568782F7B5BDA00356C23 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3BD568582F7B5BD800356C23 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3BD5685F2F7B5BD800356C23;
-			remoteInfo = HealthQuantification;
-		};
 		3BD568BC2F7B5E2200356C23 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 3BD568582F7B5BD800356C23 /* Project object */;
@@ -38,34 +24,26 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		3BD568602F7B5BD800356C23 /* HealthQuantification.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HealthQuantification.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3BD5686D2F7B5BDA00356C23 /* HealthQuantificationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthQuantificationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3BD568772F7B5BDA00356C23 /* HealthQuantificationUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthQuantificationUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD568AF2F7B5E2100356C23 /* HealthQuantificationIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HealthQuantificationIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD568BB2F7B5E2200356C23 /* HealthQuantificationIOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthQuantificationIOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD568C52F7B5E2200356C23 /* HealthQuantificationIOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthQuantificationIOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3BD568E02F7B5E2200356C23 /* Exceptions for "HealthQuantificationIOS" folder in "HealthQuantificationIOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3BD568AE2F7B5E2100356C23 /* HealthQuantificationIOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		3BD568622F7B5BD800356C23 /* HealthQuantification */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HealthQuantification;
-			sourceTree = "<group>";
-		};
-		3BD568702F7B5BDA00356C23 /* HealthQuantificationTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HealthQuantificationTests;
-			sourceTree = "<group>";
-		};
-		3BD5687A2F7B5BDA00356C23 /* HealthQuantificationUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HealthQuantificationUITests;
-			sourceTree = "<group>";
-		};
 		3BD568B02F7B5E2100356C23 /* HealthQuantificationIOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				3BD568E02F7B5E2200356C23 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				3BD568E02F7B5E2200356C23 /* Exceptions for "HealthQuantificationIOS" folder in "HealthQuantificationIOS" target */,
 			);
 			path = HealthQuantificationIOS;
 			sourceTree = "<group>";
@@ -82,38 +60,7 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		3BD568E02F7B5E2200356C23 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 3BD568AE2F7B5E2100356C23 /* HealthQuantificationIOS */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFrameworksBuildPhase section */
-		3BD5685D2F7B5BD800356C23 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD5686A2F7B5BDA00356C23 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD568742F7B5BDA00356C23 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3BD568AC2F7B5E2100356C23 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -141,9 +88,6 @@
 		3BD568572F7B5BD800356C23 = {
 			isa = PBXGroup;
 			children = (
-				3BD568622F7B5BD800356C23 /* HealthQuantification */,
-				3BD568702F7B5BDA00356C23 /* HealthQuantificationTests */,
-				3BD5687A2F7B5BDA00356C23 /* HealthQuantificationUITests */,
 				3BD568B02F7B5E2100356C23 /* HealthQuantificationIOS */,
 				3BD568BE2F7B5E2200356C23 /* HealthQuantificationIOSTests */,
 				3BD568C82F7B5E2200356C23 /* HealthQuantificationIOSUITests */,
@@ -154,9 +98,6 @@
 		3BD568612F7B5BD800356C23 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3BD568602F7B5BD800356C23 /* HealthQuantification.app */,
-				3BD5686D2F7B5BDA00356C23 /* HealthQuantificationTests.xctest */,
-				3BD568772F7B5BDA00356C23 /* HealthQuantificationUITests.xctest */,
 				3BD568AF2F7B5E2100356C23 /* HealthQuantificationIOS.app */,
 				3BD568BB2F7B5E2200356C23 /* HealthQuantificationIOSTests.xctest */,
 				3BD568C52F7B5E2200356C23 /* HealthQuantificationIOSUITests.xctest */,
@@ -167,74 +108,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3BD5685F2F7B5BD800356C23 /* HealthQuantification */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3BD568812F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantification" */;
-			buildPhases = (
-				3BD5685C2F7B5BD800356C23 /* Sources */,
-				3BD5685D2F7B5BD800356C23 /* Frameworks */,
-				3BD5685E2F7B5BD800356C23 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				3BD568622F7B5BD800356C23 /* HealthQuantification */,
-			);
-			name = HealthQuantification;
-			packageProductDependencies = (
-			);
-			productName = HealthQuantification;
-			productReference = 3BD568602F7B5BD800356C23 /* HealthQuantification.app */;
-			productType = "com.apple.product-type.application";
-		};
-		3BD5686C2F7B5BDA00356C23 /* HealthQuantificationTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3BD568842F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantificationTests" */;
-			buildPhases = (
-				3BD568692F7B5BDA00356C23 /* Sources */,
-				3BD5686A2F7B5BDA00356C23 /* Frameworks */,
-				3BD5686B2F7B5BDA00356C23 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3BD5686F2F7B5BDA00356C23 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				3BD568702F7B5BDA00356C23 /* HealthQuantificationTests */,
-			);
-			name = HealthQuantificationTests;
-			packageProductDependencies = (
-			);
-			productName = HealthQuantificationTests;
-			productReference = 3BD5686D2F7B5BDA00356C23 /* HealthQuantificationTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		3BD568762F7B5BDA00356C23 /* HealthQuantificationUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3BD568872F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantificationUITests" */;
-			buildPhases = (
-				3BD568732F7B5BDA00356C23 /* Sources */,
-				3BD568742F7B5BDA00356C23 /* Frameworks */,
-				3BD568752F7B5BDA00356C23 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3BD568792F7B5BDA00356C23 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				3BD5687A2F7B5BDA00356C23 /* HealthQuantificationUITests */,
-			);
-			name = HealthQuantificationUITests;
-			packageProductDependencies = (
-			);
-			productName = HealthQuantificationUITests;
-			productReference = 3BD568772F7B5BDA00356C23 /* HealthQuantificationUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		3BD568AE2F7B5E2100356C23 /* HealthQuantificationIOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3BD568CD2F7B5E2200356C23 /* Build configuration list for PBXNativeTarget "HealthQuantificationIOS" */;
@@ -313,22 +186,6 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
-					3BD5685F2F7B5BD800356C23 = {
-						CreatedOnToolsVersion = 26.3;
-						SystemCapabilities = {
-							com.apple.HealthKit = {
-								enabled = 1;
-							};
-						};
-					};
-					3BD5686C2F7B5BDA00356C23 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 3BD5685F2F7B5BD800356C23;
-					};
-					3BD568762F7B5BDA00356C23 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 3BD5685F2F7B5BD800356C23;
-					};
 					3BD568AE2F7B5E2100356C23 = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -356,9 +213,6 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				3BD5685F2F7B5BD800356C23 /* HealthQuantification */,
-				3BD5686C2F7B5BDA00356C23 /* HealthQuantificationTests */,
-				3BD568762F7B5BDA00356C23 /* HealthQuantificationUITests */,
 				3BD568AE2F7B5E2100356C23 /* HealthQuantificationIOS */,
 				3BD568BA2F7B5E2200356C23 /* HealthQuantificationIOSTests */,
 				3BD568C42F7B5E2200356C23 /* HealthQuantificationIOSUITests */,
@@ -367,27 +221,6 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		3BD5685E2F7B5BD800356C23 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD5686B2F7B5BDA00356C23 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD568752F7B5BDA00356C23 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3BD568AD2F7B5E2100356C23 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -412,27 +245,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		3BD5685C2F7B5BD800356C23 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD568692F7B5BDA00356C23 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3BD568732F7B5BDA00356C23 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3BD568AB2F7B5E2100356C23 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -457,16 +269,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		3BD5686F2F7B5BDA00356C23 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3BD5685F2F7B5BD800356C23 /* HealthQuantification */;
-			targetProxy = 3BD5686E2F7B5BDA00356C23 /* PBXContainerItemProxy */;
-		};
-		3BD568792F7B5BDA00356C23 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3BD5685F2F7B5BD800356C23 /* HealthQuantification */;
-			targetProxy = 3BD568782F7B5BDA00356C23 /* PBXContainerItemProxy */;
-		};
 		3BD568BD2F7B5E2200356C23 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 3BD568AE2F7B5E2100356C23 /* HealthQuantificationIOS */;
@@ -597,60 +399,6 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
-			};
-			name = Release;
-		};
-		3BD568822F7B5BDA00356C23 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = HealthQuantification/HealthQuantification.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = Y2T99LVU9E;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yage.HealthQuantification;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		3BD568832F7B5BDA00356C23 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = HealthQuantification/HealthQuantification.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = Y2T99LVU9E;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.yage.HealthQuantification;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -823,44 +571,6 @@
 			};
 			name = Release;
 		};
-		3BD569B42F7B84EC00356C23 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				PRODUCT_NAME = HealthQuantificationTests;
-			};
-			name = Debug;
-		};
-		3BD569B52F7B84EC00356C23 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				PRODUCT_NAME = HealthQuantificationTests;
-			};
-			name = Release;
-		};
-		3BD569B62F7B84EC00356C23 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				PRODUCT_NAME = HealthQuantificationUITests;
-			};
-			name = Debug;
-		};
-		3BD569B72F7B84EC00356C23 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				PRODUCT_NAME = HealthQuantificationUITests;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -869,33 +579,6 @@
 			buildConfigurations = (
 				3BD5687F2F7B5BDA00356C23 /* Debug */,
 				3BD568802F7B5BDA00356C23 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3BD568812F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantification" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3BD568822F7B5BDA00356C23 /* Debug */,
-				3BD568832F7B5BDA00356C23 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3BD568842F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantificationTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3BD569B42F7B84EC00356C23 /* Debug */,
-				3BD569B52F7B84EC00356C23 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3BD568872F7B5BDA00356C23 /* Build configuration list for PBXNativeTarget "HealthQuantificationUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3BD569B62F7B84EC00356C23 /* Debug */,
-				3BD569B72F7B84EC00356C23 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

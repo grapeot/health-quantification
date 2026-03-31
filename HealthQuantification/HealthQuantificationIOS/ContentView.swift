@@ -46,7 +46,7 @@ struct ContentView: View {
                     Text("Server URL")
                         .font(.headline)
 
-                    TextField("http://quantum.tail63c3c5.ts.net:7996", text: $serverURL)
+                    TextField("http://localhost:7996", text: $serverURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -139,7 +139,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(model: HealthKitService(), serverURL: .constant("http://quantum.tail63c3c5.ts.net:7996"))
+    ContentView(model: HealthKitService(), serverURL: .constant("http://localhost:7996"))
 }
 
 private enum ExportStatusTone {

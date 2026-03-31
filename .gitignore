@@ -5,6 +5,7 @@ __pycache__/
 .env
 *.db
 docs/reports/
+docs/assets/
 data/raw/*
 data/exports/*
 !data/raw/.gitkeep
@@ -12,8 +13,6 @@ data/exports/*
 dist/
 build/
 *.egg-info/
-native/apple_health_exporter/.build/
-native/apple_health_exporter_app/build/
 HealthQuantification/*/DerivedData/
 HealthQuantification/HealthQuantification.xcodeproj/xcuserdata/
 HealthQuantification/HealthQuantification.xcodeproj/project.xcworkspace/xcuserdata/

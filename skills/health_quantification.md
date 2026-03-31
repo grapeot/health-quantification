@@ -8,7 +8,7 @@
 
 ## 目标
 
-用项目内稳定的 library 与 CLI 合同管理个人健康量化数据。AI 和人类基于同一事实层工作，报告以 Markdown 输出到 `docs/reports/`，图表以 SVG 输出到 `docs/assets/`。
+CLI 只提供结构化数据接口（JSON/text），AI 负责所有分析、可视化和报告生成。AI 基于原始数据自由决定分析角度、报告结构和输出格式。报告以 Markdown 输出到 `docs/reports/`，图表以 PNG 输出到 `docs/assets/`。
 
 ## 架构
 
@@ -16,7 +16,7 @@
 
 1. **采集层**：iOS app（`HealthQuantification/HealthQuantificationIOS/`），HealthKit 读取 + POST 到 FastAPI
 2. **写入层**：FastAPI server（`src/health_quantification/server.py`），pm2 管理，端口 7996
-3. **分析层**：Python CLI（`src/health_quantification/cli.py`），只读查询 SQLite
+3. **数据层**：Python CLI（`src/health_quantification/cli.py`），只读查询 SQLite，输出 JSON/text
 
 ## 关键边界
 
@@ -27,28 +27,32 @@
 - `docs/working.md` 记录变更与踩坑结论
 - HealthKit 时间戳是 UTC，分析时需转换到用户时区（默认 `America/Los_Angeles`）
 - 分析直接读 SQLite，**不需要后端运行**。如果今天或昨天没有数据，提醒用户先打开 iOS app 同步
+- CLI 不生成报告。报告内容和格式完全由 AI 决定
 
 ## CLI 合同
+
+CLI 只提供数据，不做分析或报告生成：
 
 ```bash
 python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json|text
 python -m health_quantification.cli sleep daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli report analyze --days 30
-python -m health_quantification.cli report daily --date YYYY-MM-DD
 ```
 
-`sleep` 子命令输出到 stdout（JSON 或 text）。`report` 子命令生成 MD 报告到 `docs/reports/`，SVG 图表到 `docs/assets/`。
+`sleep analyze` 输出多日汇总 + 每日明细（JSON）。`sleep daily` 输出单日明细（JSON）。`--format text` 适合人类快速查看。
 
-## 报告生成
+## 分析与报告
 
-AI 决定文件名，输出到 `docs/reports/`：
+AI 完全控制分析过程。典型工作流：
 
-- `report analyze --days N` → `docs/reports/sleep_analysis_{N}d.md` + `docs/assets/sleep_trend.svg`
-- `report daily --date YYYY-MM-DD` → `docs/reports/sleep_{date}.md`
+1. 调用 CLI 获取 JSON 数据：`sleep analyze --days 30 --format json`
+2. 基于数据自由分析（趋势、异常、对比、阶段分解等）
+3. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表
+4. 撰写 Markdown 报告，引用 `../assets/` 下的 PNG 图片
+5. 输出到 `docs/reports/`，文件名由 AI 决定
 
-AI 也可以直接调用 `artifacts/report.py` 的函数，自由组合内容和文件名。报告 MD 中引用 `../assets/` 下的 SVG。
+`artifacts/report.py` 提供 `render_bar_chart_png()` 和 `render_comparison_chart_png()` 两个辅助函数，AI 也可以直接用 matplotlib 自行绘制任意图表。
 
 ## 从不同目录调用
 
