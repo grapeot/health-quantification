@@ -64,13 +64,22 @@ python -m health_quantification.cli activity daily --date YYYY-MM-DD --format js
 
 AI 完全控制分析过程。典型工作流：
 
-1. 调用 CLI 获取 JSON 数据：`sleep analyze --days 30 --format json`
-2. 基于数据自由分析（趋势、异常、对比、阶段分解等）
-3. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表
-4. 撰写 Markdown 报告，图片引用使用相对路径（如 `../assets/chart_sleep_duration.png`），output 到 `docs/reports/`
-5. 输出到 `docs/reports/`，文件名由 AI 决定
+1. 调用 CLI 获取 JSON 数据，保存到 `docs/reports/`（如 `sleep_30d.json`）
+2. 基于数据自由分析（趋势、异常、对比、交叉关联等）
+3. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表，output 到 `docs/assets/`
+4. 撰写 Markdown 报告，图片引用使用相对路径（如 `../assets/chart.png`），output 到 `docs/reports/`
+
+文件分布：原始数据 JSON → `docs/reports/`，PNG 图表 → `docs/assets/`，分析报告 MD → `docs/reports/`。
 
 `artifacts/report.py` 提供 `render_bar_chart_png()` 和 `render_comparison_chart_png()` 两个辅助函数，AI 也可以直接用 matplotlib 自行绘制任意图表。
+
+## 分析经验
+
+- **相关性分析比单独看均值更有价值**。步数-睡眠相关性（r=0.476）比 RHR-睡眠（r=0.09）信息量大得多。多维度交叉分析优先于单维度描述性统计。
+- **Phase 2 的 `analyze` 需要指定 `--metric`**（如 `--metric resting_heart_rate`），不像 sleep 可以直接 `analyze --days 30`。
+- **步数数据的处理**：CLI 返回的是每条记录的值，需要自己按天聚合（avg × count）得到日总步数。
+- **HRV 的 Apple Watch 局限**：主要在睡眠中测量，短睡眠日数据可能不准确。分析 HRV 趋势时注意数据缺失天。
+- **可视化用 matplotlib 直接画**比 `artifacts/report.py` 更灵活。scatter + trend line + correlation 是交叉分析的标配图。
 
 ## 从不同目录调用
 

@@ -12,6 +12,10 @@
 - 修复空 samples 导致 422：body/lifestyle 无数据时跳过 POST，显示 "no data"。
 - 新增测试覆盖：Python 端 empty samples 422、invalid data_type 422（61 tests pass）；iOS 端 normalizedStageValue（14 tests pass）。
 - 更新 README、PRD、RFC、skill file 反映 Phase 2 全部数据类型和 iOS 简化 UI。
+- 综合健康分析：30 天数据（sleep 812、vitals 1884、activity 2561 samples），发现步数-睡眠显著正相关（r=0.476），睡眠严重不足（日均 5.6h，仅 17% 天达标），HRV 偏低（48ms）。报告、数据、图表分别输出到 docs/reports/ 和 docs/assets/。
+- Skill file 补充分析经验：交叉相关性分析优先于单维度统计、步数需要自行聚合、HRV 受短睡眠日数据缺失影响。
+- 新增测试覆盖：Python 端 empty samples 422、invalid data_type 422（61 tests pass）；iOS 端 normalizedStageValue（14 tests pass）。
+- 更新 README、PRD、RFC、skill file 反映 Phase 2 全部数据类型和 iOS 简化 UI。
 
 ### 2026-03-31 (UI simplification & partial auth handling)
 
