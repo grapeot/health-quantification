@@ -2,6 +2,23 @@
 
 ## Changelog
 
+### 2026-03-31 (Phase 2 kickoff)
+
+- 完成 sleep comprehensive analysis 的交叉分析：交叉比对 Apple Watch 睡眠数据、每日活动记录（daily_records/2026.md）和生活录音摘要（life_record/），结合用户补充上下文（6mg 褪黑素、娃感冒夜醒、频繁起夜、3 杯拿铁/天）。
+- 发现睡眠异常的核心模式：21:00 后工程调试是 #1 睡眠杀手，多项目并行是 #2，缺乏睡前过渡仪式是 #3。
+- 整体重写报告为连贯文档（`sleep_comprehensive_analysis_2026-03-31.md`），发布到 Google Docs 并插入 7 张 PNG 图表。
+- 调研个人放松方式：从 90 天生活记录中提取休闲活动画像，发现用户"大脑没有 off switch"，建议无屏幕手工活动（莳绘/写字）、游戏时间前移到 19:00-21:00、有目的户外步行、decaf 咖啡仪式。
+- 咖啡因计算：14g 浅烘 double shot ≈ 150mg 咖啡因（Arabica 1.4% × 14g × 80% 萃取率），3 杯/天 ≈ 450mg，接近 FDA 400mg 上限。
+- iOS localStorage：确认 server URL 已通过 `@AppStorage("serverURL")` 持久化（UserDefaults），无需代码改动。xcodebuild 编译和测试通过。
+- **Phase 2 规划**：更新 PRD 和 RFC，接入全部新数据类型：
+  - 生命体征（Apple Watch 自动）：静息心率、HRV、呼吸频率、血氧
+  - 活动（Apple Watch 自动）：步数
+  - 体测（外部设备）：体重（WiFi 秤）、血糖（CGM）、血压（蓝牙血压计）
+  - 生活方式（Siri 手动）：咖啡因（~150mg/杯）、酒精
+  - 新增 4 张 SQLite 表（vitals_samples, body_samples, lifestyle_samples, activity_samples）
+  - 新增 4 个 ingestion endpoint（POST /ingest/{vitals,body,lifestyle,activity}）
+  - 新增 CLI 子命令（vitals, body, lifestyle, activity 的 analyze/daily）
+
 ### 2026-03-30
 
 - 完成首次 comprehensive sleep analysis：28 个过夜夜晚的 7 维分析（duration、stages、efficiency、bedtime/waketime、weekly pattern、sleep debt、data quality），生成 7 张 PNG 图表和 1 份 MD 报告，输出到 `docs/reports/` 和 `docs/assets/`。
