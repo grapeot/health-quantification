@@ -2,6 +2,15 @@
 
 ## Changelog
 
+### 2026-03-31 (Phase 2 backend implementation)
+
+- 实现 Phase 2 SQLite schema：在 `storage.py` 初始化流程中加入 `vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples` 四张表，并补齐对应的 upsert/query/delete 函数。
+- 扩展 FastAPI ingestion server：新增 POST `/ingest/vitals`、`/ingest/body`、`/ingest/lifestyle`、`/ingest/activity`，并用通用 GET/DELETE `/ingest/{data_type}` 覆盖 sleep + Phase 2 全部数据类型，支持 `from_date`、`to_date`、`source`、`metric_type` 过滤。
+- 扩展 CLI：新增 `vitals`、`body`、`lifestyle`、`activity` 顶层子命令，均支持 `analyze --days N --metric TYPE --format json|text` 和 `daily --date DATE --format json|text`；Phase 2 分析实现为按天聚合的基础统计（count、avg、min、max、std）。
+- 扩展 `models.py` 和新增 `analysis/metrics.py`，为 Phase 2 提供通用 numeric stats / daily summary 数据结构与计算逻辑，同时保持 `analysis/sleep.py` 不变。
+- 测试补齐：新增 Phase 2 Pydantic 模型验证、HTTP endpoint 幂等性与过滤测试、CLI smoke test；另外修正一个既有 sleep analysis fixture，使其符合项目当前基于 local `end_at` 归属日期的规则。
+- 验证结果：修改文件的 `lsp_diagnostics` 已跑过且无 error；在项目 `.venv` 中执行 `source .venv/bin/activate && pytest`，51 个测试全部通过。
+
 ### 2026-03-31 (Phase 2 kickoff)
 
 - 完成 sleep comprehensive analysis 的交叉分析：交叉比对 Apple Watch 睡眠数据、每日活动记录（daily_records/2026.md）和生活录音摘要（life_record/），结合用户补充上下文（6mg 褪黑素、娃感冒夜醒、频繁起夜、3 杯拿铁/天）。

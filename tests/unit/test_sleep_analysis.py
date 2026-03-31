@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from health_quantification.analysis.sleep import (
     compute_analysis,
     compute_day_metrics,
@@ -84,10 +86,10 @@ def test_compute_day_metrics_overnight_not_nap() -> None:
 
 def test_compute_analysis_summary() -> None:
     samples = [
-        _make_sample("s1", "2026-03-28T22:00:00Z", "2026-03-28T22:30:00Z", "in_bed", 0),
-        _make_sample("s2", "2026-03-28T22:30:00Z", "2026-03-29T06:30:00Z", "asleep_core", 2),
-        _make_sample("s3", "2026-03-29T22:00:00Z", "2026-03-29T22:30:00Z", "in_bed", 0),
-        _make_sample("s4", "2026-03-29T22:30:00Z", "2026-03-30T07:00:00Z", "asleep_core", 2),
+        _make_sample("s1", "2026-03-29T06:30:00Z", "2026-03-29T08:00:00Z", "in_bed", 0),
+        _make_sample("s2", "2026-03-29T08:00:00Z", "2026-03-29T15:00:00Z", "asleep_core", 2),
+        _make_sample("s3", "2026-03-30T06:30:00Z", "2026-03-30T08:00:00Z", "in_bed", 0),
+        _make_sample("s4", "2026-03-30T08:00:00Z", "2026-03-31T15:00:00Z", "asleep_core", 2),
     ]
     analysis = compute_analysis(samples, days=3, tz_name="America/Los_Angeles")
     assert analysis.total_samples == 4
@@ -106,5 +108,10 @@ def test_compute_analysis_to_dict() -> None:
     assert "daily" in d
     assert "avg_sleep_hours" in d
     assert analysis.days_with_data == 1
-    days_with_sleep = [day for day in d["daily"] if day["total_sleep_hours"] > 0]
+    daily = cast(list[dict[str, object]], d["daily"])
+    days_with_sleep = [
+        day
+        for day in daily
+        if float(cast(int | float, day["total_sleep_hours"])) > 0
+    ]
     assert len(days_with_sleep) == 1

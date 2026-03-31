@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, TypeAlias, cast
+from typing import Annotated, Callable, ClassVar, Literal, TypeAlias, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -11,14 +12,41 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from health_quantification.config import Settings, load_settings
 from health_quantification.storage import (
+    delete_activity_samples,
+    delete_body_samples,
+    delete_lifestyle_samples,
     delete_sleep_samples,
+    delete_vitals_samples,
     initialize_database,
+    query_activity_samples,
+    query_body_samples,
+    query_lifestyle_samples,
     query_sleep_samples,
+    query_vitals_samples,
+    upsert_activity_samples,
+    upsert_body_samples,
+    upsert_lifestyle_samples,
     upsert_sleep_samples,
+    upsert_vitals_samples,
 )
 
 API_VERSION = "0.1.0"
 StorageRow: TypeAlias = dict[str, object]
+DataTypeName = Literal["sleep", "vitals", "body", "lifestyle", "activity"]
+VitalsMetricType = Literal[
+    "resting_heart_rate",
+    "heart_rate_variability_sdnn",
+    "respiratory_rate",
+    "oxygen_saturation",
+]
+BodyMetricType = Literal[
+    "body_mass",
+    "blood_glucose",
+    "blood_pressure_systolic",
+    "blood_pressure_diastolic",
+]
+LifestyleMetricType = Literal["dietary_caffeine", "dietary_alcohol"]
+ActivityMetricType = Literal["step_count"]
 
 
 def _normalize_from_date(value: str | None) -> str | None:
@@ -61,148 +89,160 @@ def _parse_datetime(value: str) -> datetime:
 
 
 class SleepSampleIn(BaseModel):
-    """One normalized sleep stage sample from an upstream exporter.
-
-    Each sample represents a single sleep segment or stage interval from a source
-    system such as Apple Health. The pair of source and source_id is the idempotent
-    identity used by storage. Re-sending the same sample updates the existing row
-    instead of creating duplicates.
-    """
-
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
-    source_id: str = Field(
-        ...,
-        description="Stable unique identifier emitted by the upstream source for this sample.",
-    )
-    start_at: datetime = Field(
-        ...,
-        description="Inclusive ISO-8601 start timestamp for the sleep interval.",
-    )
-    end_at: datetime | None = Field(
-        ...,
-        description="Exclusive or end timestamp for the sleep interval in ISO-8601 format.",
-    )
-    stage: str = Field(
-        ...,
-        description="Normalized sleep stage label such as asleep_deep, asleep_core, or awake.",
-    )
-    stage_value: int = Field(
-        ...,
-        description="Source-specific numeric stage code preserved for downstream analysis.",
-    )
-    source_bundle_id: str | None = Field(
-        None,
-        description="Optional upstream application bundle identifier such as com.apple.health.",
-    )
-    source_name: str | None = Field(
-        None,
-        description="Optional human-readable upstream source name such as Health.",
-    )
-    metadata: dict[str, JsonValue] = Field(
-        default_factory=dict,
-        description="Additional source metadata preserved as JSON for future analysis and debugging.",
-    )
+    source_id: str = Field(...)
+    start_at: datetime = Field(...)
+    end_at: datetime | None = Field(...)
+    stage: str = Field(...)
+    stage_value: int = Field(...)
+    source_bundle_id: str | None = Field(None)
+    source_name: str | None = Field(None)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class RecordedMetricSampleIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source_id: str = Field(...)
+    recorded_at: datetime = Field(...)
+    value: float = Field(...)
+    unit: str | None = Field(None)
+    source_bundle_id: str | None = Field(None)
+    source_name: str | None = Field(None)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class VitalsSampleIn(RecordedMetricSampleIn):
+    metric_type: VitalsMetricType = Field(...)
+
+
+class BodySampleIn(RecordedMetricSampleIn):
+    metric_type: BodyMetricType = Field(...)
+
+
+class LifestyleSampleIn(RecordedMetricSampleIn):
+    metric_type: LifestyleMetricType = Field(...)
+
+
+class ActivitySampleIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source_id: str = Field(...)
+    start_at: datetime = Field(...)
+    end_at: datetime | None = Field(...)
+    metric_type: ActivityMetricType = Field(...)
+    value: float = Field(...)
+    unit: str | None = Field(None)
+    source_bundle_id: str | None = Field(None)
+    source_name: str | None = Field(None)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class SleepIngestRequest(BaseModel):
-    """Batch ingestion envelope for sleep samples.
-
-    The request describes one exporter run. The source identifies the upstream
-    adapter, exported_at tells consumers when the snapshot was generated, and
-    samples contains the sleep segments to upsert. Ingestion is idempotent per
-    sample because storage upserts on the pair of source and source_id.
-    """
-
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
-    source: str = Field(
-        ...,
-        description="Name of the upstream ingestion source, for example apple_health_ios.",
-    )
-    exported_at: datetime = Field(
-        ...,
-        description="ISO-8601 timestamp for when the upstream exporter produced this batch.",
-    )
-    schema_version: str = Field(
-        ...,
-        description="Version of the ingestion payload schema used by the exporter.",
-    )
-    samples: list[SleepSampleIn] = Field(
-        ...,
-        min_length=1,
-        description="Sleep samples included in this batch. Each sample is upserted independently.",
-    )
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[SleepSampleIn] = Field(..., min_length=1)
 
 
-class SleepIngestResponse(BaseModel):
-    """Result of a sleep ingestion request.
+class VitalsIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
-    accepted means the batch passed validation and was written via upsert.
-    upserted is the number of samples processed in this request, and total_samples
-    is the current total number of stored rows for the same source after ingestion.
-    """
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[VitalsSampleIn] = Field(..., min_length=1)
 
-    status: Literal["accepted"] = Field(
-        ...,
-        description="Fixed status indicating the batch was validated and processed.",
-    )
-    upserted: int = Field(
-        ...,
-        description="Number of samples upserted from the current request payload.",
-    )
-    total_samples: int = Field(
-        ...,
-        description="Current total number of stored sleep samples for the request source after ingestion.",
-    )
+
+class BodyIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[BodySampleIn] = Field(..., min_length=1)
+
+
+class LifestyleIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[LifestyleSampleIn] = Field(..., min_length=1)
+
+
+class ActivityIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[ActivitySampleIn] = Field(..., min_length=1)
+
+
+class IngestResponse(BaseModel):
+    status: Literal["accepted"] = Field(...)
+    upserted: int = Field(...)
+    total_samples: int = Field(...)
 
 
 class SleepSampleOut(BaseModel):
-    """Stored sleep sample record returned by the query endpoint.
-
-    This mirrors the persisted SQLite row, including the database id and audit
-    timestamps. metadata_json from storage is decoded into metadata so API clients
-    receive structured JSON instead of a raw string.
-    """
-
-    id: int = Field(..., description="Autoincrement primary key in the local SQLite database.")
-    source: str = Field(..., description="Ingestion source namespace for the sample.")
-    source_id: str = Field(..., description="Stable upstream identifier for this sample.")
-    start_at: str = Field(..., description="Stored ISO-8601 start timestamp.")
-    end_at: str | None = Field(..., description="Stored ISO-8601 end timestamp, if present.")
-    stage: str = Field(..., description="Normalized sleep stage label stored for the sample.")
-    stage_value: int = Field(..., description="Source-specific numeric stage code stored for the sample.")
-    source_bundle_id: str | None = Field(
-        ..., description="Optional upstream application bundle identifier."
-    )
-    source_name: str | None = Field(..., description="Optional human-readable source name.")
-    metadata: dict[str, JsonValue] = Field(
-        ..., description="Decoded metadata JSON payload associated with the sample."
-    )
-    created_at: str = Field(..., description="SQLite creation timestamp for this row.")
-    updated_at: str = Field(..., description="SQLite update timestamp for this row.")
+    id: int = Field(...)
+    source: str = Field(...)
+    source_id: str = Field(...)
+    start_at: str = Field(...)
+    end_at: str | None = Field(...)
+    stage: str = Field(...)
+    stage_value: int = Field(...)
+    source_bundle_id: str | None = Field(...)
+    source_name: str | None = Field(...)
+    metadata: dict[str, JsonValue] = Field(...)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
 
 
-class DeleteSleepResponse(BaseModel):
-    """Deletion result for the sleep ingestion endpoint.
+class RecordedMetricSampleOut(BaseModel):
+    id: int = Field(...)
+    source: str = Field(...)
+    source_id: str = Field(...)
+    recorded_at: str = Field(...)
+    metric_type: str = Field(...)
+    value: float = Field(...)
+    unit: str | None = Field(...)
+    source_bundle_id: str | None = Field(...)
+    source_name: str | None = Field(...)
+    metadata: dict[str, JsonValue] = Field(...)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
 
-    This endpoint exists mainly for test cleanup and controlled maintenance. The
-    server requires a source filter so callers cannot accidentally wipe all sleep
-    data through the API.
-    """
 
-    deleted: int = Field(..., description="Number of rows deleted for the requested source.")
+class ActivitySampleOut(BaseModel):
+    id: int = Field(...)
+    source: str = Field(...)
+    source_id: str = Field(...)
+    start_at: str | None = Field(...)
+    end_at: str | None = Field(...)
+    metric_type: str = Field(...)
+    value: float = Field(...)
+    unit: str | None = Field(...)
+    source_bundle_id: str | None = Field(...)
+    source_name: str | None = Field(...)
+    metadata: dict[str, JsonValue] = Field(...)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
+
+
+class DeleteSamplesResponse(BaseModel):
+    deleted: int = Field(...)
 
 
 class HealthResponse(BaseModel):
-    """Basic service health response.
-
-    This confirms the FastAPI ingestion service is reachable and returns the API
-    version exposed by this backend instance.
-    """
-
-    status: Literal["ok"] = Field(..., description="Fixed status indicating the server is healthy.")
-    version: str = Field(..., description="Application API version exposed by this backend.")
+    status: Literal["ok"] = Field(...)
+    version: str = Field(...)
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -215,7 +255,7 @@ def _serialize_datetime(value: datetime | None) -> str | None:
     return value.isoformat().replace("+00:00", "Z")
 
 
-def _sample_to_storage_dict(source: str, sample: SleepSampleIn) -> dict[str, object]:
+def _sleep_sample_to_storage_dict(source: str, sample: SleepSampleIn) -> dict[str, object]:
     return {
         "source": source,
         "source_id": sample.source_id,
@@ -223,6 +263,37 @@ def _sample_to_storage_dict(source: str, sample: SleepSampleIn) -> dict[str, obj
         "end_at": _serialize_datetime(sample.end_at),
         "stage": sample.stage,
         "stage_value": sample.stage_value,
+        "source_bundle_id": sample.source_bundle_id,
+        "source_name": sample.source_name,
+        "metadata": sample.metadata,
+    }
+
+
+def _recorded_metric_sample_to_storage_dict(
+    source: str, sample: VitalsSampleIn | BodySampleIn | LifestyleSampleIn
+) -> dict[str, object]:
+    return {
+        "source": source,
+        "source_id": sample.source_id,
+        "recorded_at": _serialize_datetime(sample.recorded_at),
+        "metric_type": sample.metric_type,
+        "value": sample.value,
+        "unit": sample.unit,
+        "source_bundle_id": sample.source_bundle_id,
+        "source_name": sample.source_name,
+        "metadata": sample.metadata,
+    }
+
+
+def _activity_sample_to_storage_dict(source: str, sample: ActivitySampleIn) -> dict[str, object]:
+    return {
+        "source": source,
+        "source_id": sample.source_id,
+        "start_at": _serialize_datetime(sample.start_at),
+        "end_at": _serialize_datetime(sample.end_at),
+        "metric_type": sample.metric_type,
+        "value": sample.value,
+        "unit": sample.unit,
         "source_bundle_id": sample.source_bundle_id,
         "source_name": sample.source_name,
         "metadata": sample.metadata,
@@ -241,6 +312,12 @@ def _require_str(value: object) -> str:
     raise TypeError(f"Expected str value, got {type(value).__name__}")
 
 
+def _require_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise TypeError(f"Expected numeric value, got {type(value).__name__}")
+
+
 def _optional_str(value: object) -> str | None:
     if value is None:
         return None
@@ -256,8 +333,7 @@ def _decode_metadata(value: object) -> dict[str, JsonValue]:
     return {}
 
 
-def _row_to_api_model(row: StorageRow) -> SleepSampleOut:
-    metadata = _decode_metadata(row.get("metadata_json"))
+def _row_to_sleep_model(row: StorageRow) -> SleepSampleOut:
     return SleepSampleOut(
         id=_require_int(row["id"]),
         source=_require_str(row["source"]),
@@ -268,10 +344,96 @@ def _row_to_api_model(row: StorageRow) -> SleepSampleOut:
         stage_value=_require_int(row["stage_value"]),
         source_bundle_id=_optional_str(row["source_bundle_id"]),
         source_name=_optional_str(row["source_name"]),
-        metadata=metadata,
+        metadata=_decode_metadata(row.get("metadata_json")),
         created_at=_require_str(row["created_at"]),
         updated_at=_require_str(row["updated_at"]),
     )
+
+
+def _row_to_recorded_metric_model(row: StorageRow) -> RecordedMetricSampleOut:
+    return RecordedMetricSampleOut(
+        id=_require_int(row["id"]),
+        source=_require_str(row["source"]),
+        source_id=_require_str(row["source_id"]),
+        recorded_at=_require_str(row["recorded_at"]),
+        metric_type=_require_str(row["metric_type"]),
+        value=_require_float(row["value"]),
+        unit=_optional_str(row["unit"]),
+        source_bundle_id=_optional_str(row["source_bundle_id"]),
+        source_name=_optional_str(row["source_name"]),
+        metadata=_decode_metadata(row.get("metadata_json")),
+        created_at=_require_str(row["created_at"]),
+        updated_at=_require_str(row["updated_at"]),
+    )
+
+
+def _row_to_activity_model(row: StorageRow) -> ActivitySampleOut:
+    return ActivitySampleOut(
+        id=_require_int(row["id"]),
+        source=_require_str(row["source"]),
+        source_id=_require_str(row["source_id"]),
+        start_at=_optional_str(row["start_at"]),
+        end_at=_optional_str(row["end_at"]),
+        metric_type=_require_str(row["metric_type"]),
+        value=_require_float(row["value"]),
+        unit=_optional_str(row["unit"]),
+        source_bundle_id=_optional_str(row["source_bundle_id"]),
+        source_name=_optional_str(row["source_name"]),
+        metadata=_decode_metadata(row.get("metadata_json")),
+        created_at=_require_str(row["created_at"]),
+        updated_at=_require_str(row["updated_at"]),
+    )
+
+
+@dataclass(frozen=True)
+class DataTypeConfig:
+    sleep_query_fn: Callable[[Path, str | None, str | None, str | None], list[StorageRow]] | None = None
+    metric_query_fn: Callable[
+        [Path, str | None, str | None, str | None, str | None],
+        list[StorageRow],
+    ] | None = None
+    delete_fn: Callable[[Path, str | None], int] | None = None
+
+
+DATA_TYPE_CONFIG: dict[DataTypeName, DataTypeConfig] = {
+    "sleep": DataTypeConfig(sleep_query_fn=query_sleep_samples, delete_fn=delete_sleep_samples),
+    "vitals": DataTypeConfig(metric_query_fn=query_vitals_samples, delete_fn=delete_vitals_samples),
+    "body": DataTypeConfig(metric_query_fn=query_body_samples, delete_fn=delete_body_samples),
+    "lifestyle": DataTypeConfig(metric_query_fn=query_lifestyle_samples, delete_fn=delete_lifestyle_samples),
+    "activity": DataTypeConfig(metric_query_fn=query_activity_samples, delete_fn=delete_activity_samples),
+}
+
+
+def _query_rows(
+    *,
+    data_type: DataTypeName,
+    db_path: Path,
+    from_date: str | None,
+    to_date: str | None,
+    source: str | None,
+    metric_type: str | None,
+) -> list[StorageRow]:
+    config = DATA_TYPE_CONFIG[data_type]
+    if data_type == "sleep":
+        query_fn = config.sleep_query_fn
+        if query_fn is None:
+            raise ValueError(f"sleep query function missing for {data_type}")
+        return query_fn(db_path, from_date, to_date, source)
+    query_fn = config.metric_query_fn
+    if query_fn is None:
+        raise ValueError(f"metric query function missing for {data_type}")
+    return query_fn(db_path, from_date, to_date, source, metric_type)
+
+
+def _serialize_rows(
+    data_type: DataTypeName,
+    rows: list[StorageRow],
+) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut]:
+    if data_type == "sleep":
+        return [_row_to_sleep_model(row) for row in rows]
+    if data_type == "activity":
+        return [_row_to_activity_model(row) for row in rows]
+    return [_row_to_recorded_metric_model(row) for row in rows]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -280,11 +442,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Health Quantification Ingestion API",
         version=API_VERSION,
-        summary="Sleep ingestion API for the health_quantification toolkit.",
+        summary="Health ingestion API for the health_quantification toolkit.",
         description=(
             "HTTP ingestion boundary for normalized personal health data. "
-            "This server currently exposes an idempotent sleep ingestion batch endpoint, "
-            "sleep querying and cleanup routes, and a basic health probe."
+            "This server exposes idempotent POST endpoints for sleep, vitals, body, "
+            "lifestyle, and activity data, plus generic query and cleanup routes."
         ),
     )
 
@@ -292,119 +454,103 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         initialize_database(active_settings.db_path)
         return active_settings.db_path
 
-    @app.get(
-        "/health",
-        response_model=HealthResponse,
-        summary="Check backend health",
-        description=(
-            "Return a minimal liveness payload so operators, scripts, and AI clients can confirm "
-            "that the ingestion backend is reachable and identify the API version."
-        ),
-    )
+    @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        """Return backend liveness status and API version.
-
-        This endpoint is side-effect free and can be polled safely.
-        """
-
         return HealthResponse(status="ok", version=API_VERSION)
 
-    @app.post(
-        "/ingest/sleep",
-        response_model=SleepIngestResponse,
-        summary="Ingest or update sleep samples",
-        description=(
-            "Validate and upsert a batch of normalized sleep samples into SQLite. "
-            "Idempotency is guaranteed by storage on the pair of source and source_id, "
-            "so re-sending the same exporter batch updates existing rows instead of creating duplicates."
-        ),
-    )
+    @app.post("/ingest/sleep", response_model=IngestResponse)
     def ingest_sleep(
         request: SleepIngestRequest,
         db_path: Path = Depends(get_initialized_db_path),
-    ) -> SleepIngestResponse:
-        """Upsert a batch of sleep stage samples.
-
-        The request body represents one exporter snapshot. Each sample is translated to the
-        storage contract and written with ON CONFLICT(source, source_id) DO UPDATE behavior.
-        The response reports how many samples were processed and the current total row count
-        for the same source after ingestion completes.
-        """
-
+    ) -> IngestResponse:
         upserted = upsert_sleep_samples(
             db_path,
-            [_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+            [_sleep_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
         total_samples = len(query_sleep_samples(db_path=db_path, source=request.source))
-        return SleepIngestResponse(
-            status="accepted",
-            upserted=upserted,
-            total_samples=total_samples,
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
+
+    @app.post("/ingest/vitals", response_model=IngestResponse)
+    def ingest_vitals(
+        request: VitalsIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_vitals_samples(
+            db_path,
+            [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
+        total_samples = len(query_vitals_samples(db_path=db_path, source=request.source))
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
+
+    @app.post("/ingest/body", response_model=IngestResponse)
+    def ingest_body(
+        request: BodyIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_body_samples(
+            db_path,
+            [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+        )
+        total_samples = len(query_body_samples(db_path=db_path, source=request.source))
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
+
+    @app.post("/ingest/lifestyle", response_model=IngestResponse)
+    def ingest_lifestyle(
+        request: LifestyleIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_lifestyle_samples(
+            db_path,
+            [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+        )
+        total_samples = len(query_lifestyle_samples(db_path=db_path, source=request.source))
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
+
+    @app.post("/ingest/activity", response_model=IngestResponse)
+    def ingest_activity(
+        request: ActivityIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_activity_samples(
+            db_path,
+            [_activity_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+        )
+        total_samples = len(query_activity_samples(db_path=db_path, source=request.source))
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.get(
-        "/ingest/sleep",
-        response_model=list[SleepSampleOut],
-        summary="Query stored sleep samples",
-        description=(
-            "Return sleep samples from local storage, optionally filtered by source and by start time. "
-            "from_date accepts either YYYY-MM-DD or an ISO-8601 timestamp. to_date accepts the same "
-            "formats, and a plain date is expanded to the end of that UTC day so whole-day queries behave as expected."
-        ),
+        "/ingest/{data_type}",
+        response_model=list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut],
     )
-    def get_sleep_samples(
+    def get_samples(
+        data_type: DataTypeName,
         db_path: Path = Depends(get_initialized_db_path),
-        from_date: Annotated[
-            str | None,
-            Query(description="Optional lower bound for start_at. Accepts YYYY-MM-DD or ISO-8601."),
-        ] = None,
-        to_date: Annotated[
-            str | None,
-            Query(description="Optional upper bound for start_at. Accepts YYYY-MM-DD or ISO-8601."),
-        ] = None,
-        source: Annotated[
-            str | None,
-            Query(description="Optional exact source filter such as apple_health_ios."),
-        ] = None,
-    ) -> list[SleepSampleOut]:
-        """Query persisted sleep samples with optional source and date filters.
-
-        The filter is applied against the stored start_at timestamp. Clients can use either a
-        date-only form for whole-day queries or a full ISO timestamp for precise range scans.
-        """
-
-        rows = query_sleep_samples(
+        from_date: Annotated[str | None, Query()] = None,
+        to_date: Annotated[str | None, Query()] = None,
+        source: Annotated[str | None, Query()] = None,
+        metric_type: Annotated[str | None, Query()] = None,
+    ) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut]:
+        rows = _query_rows(
+            data_type=data_type,
             db_path=db_path,
             from_date=_normalize_from_date(from_date),
             to_date=_normalize_to_date(to_date),
             source=source,
+            metric_type=metric_type,
         )
-        return [_row_to_api_model(row) for row in rows]
+        return _serialize_rows(data_type, rows)
 
-    @app.delete(
-        "/ingest/sleep",
-        response_model=DeleteSleepResponse,
-        summary="Delete stored sleep samples for one source",
-        description=(
-            "Delete stored sleep samples for a specific source. The source query parameter is required "
-            "for safety so this maintenance endpoint cannot wipe every source accidentally. This route "
-            "is intended mainly for integration-test cleanup and controlled local maintenance."
-        ),
-    )
-    def delete_sleep(
-        source: Annotated[
-            str,
-            Query(description="Required exact source namespace to delete, for example apple_health_ios."),
-        ],
+    @app.delete("/ingest/{data_type}", response_model=DeleteSamplesResponse)
+    def delete_samples(
+        data_type: DataTypeName,
+        source: Annotated[str, Query()],
         db_path: Path = Depends(get_initialized_db_path),
-    ) -> DeleteSleepResponse:
-        """Delete all stored sleep samples for one source.
-
-        This endpoint intentionally requires the source query parameter so deletion is scoped and safe.
-        """
-
-        deleted = delete_sleep_samples(db_path=db_path, source=source)
-        return DeleteSleepResponse(deleted=deleted)
+    ) -> DeleteSamplesResponse:
+        delete_fn = DATA_TYPE_CONFIG[data_type].delete_fn
+        if delete_fn is None:
+            raise ValueError(f"delete function missing for {data_type}")
+        deleted = delete_fn(db_path, source)
+        return DeleteSamplesResponse(deleted=deleted)
 
     return app
 
