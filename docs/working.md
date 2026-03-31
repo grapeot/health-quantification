@@ -33,6 +33,11 @@
 - 清理 git：移除 `.build/`、`data/health_quantification.db`、xcuserdata 等已 track 的构建产物。分 5 个 commit 整理历史。
 - iOS 真机端到端验证成功：export 813 samples（30 天），全部来自 Yan's Apple Watch，stage 分布合理（core 384, awake 158, deep 156, rem 103, unspecified 12），0 重复。
 - 数据特点：所有时间戳为 UTC（需转 PDT -7 做分析）；3/7 无数据（未佩戴）；3/29 仅 1 条午睡（14:12-15:12 PDT）。
+- Housekeeping：删除 native/ 目录（macOS HealthKit 探索结论：iOS 是正确宿主）和 4 个过时脚本。更新 AGENTS.md、README.md、PRD、RFC、skill 文件。修正默认端口从 7980 到 7996。
+- 新增 analysis/sleep.py：per-day 和 multi-day 睡眠指标计算（total sleep、deep/core/REM 分解、efficiency、nap 检测）。使用 end-time UTC→PDT 分配处理跨午夜睡眠。
+- CLI 新增 `sleep analyze --days N` 和 `sleep daily --date` 子命令，支持 json/text 输出。19 pytest 通过。
+- 跨午夜睡眠分配：使用 sample 的 end_at（而非 start_at）来确定归属日期，避免夜间睡眠被拆分到两天。nap 检测使用 has_overnight + total_sleep < 3h 双条件。
+- bedtime/wake_time 计算存在已知限制：cross-midnight split 导致某些天的 wake_time 不准确，需要 session segmentation 来精确识别主睡眠窗口。
 
 ## Lessons Learned
 
