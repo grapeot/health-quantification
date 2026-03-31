@@ -5,9 +5,15 @@ import json
 from pathlib import Path
 
 from health_quantification.analysis.daily_summary import build_default_daily_summary
+from health_quantification.analysis.sleep import (
+    DaySleepMetrics,
+    assign_samples_to_days,
+    compute_analysis,
+    compute_day_metrics,
+)
 from health_quantification.artifacts.chart import render_daily_card_svg
 from health_quantification.config import load_settings
-from health_quantification.storage import initialize_database
+from health_quantification.storage import initialize_database, query_sleep_samples
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +33,17 @@ def build_parser() -> argparse.ArgumentParser:
     summary_daily = summary_sub.add_parser("daily")
     summary_daily.add_argument("--date", required=True)
     summary_daily.add_argument("--format", choices=["json", "text"], default="json")
+
+    sleep = subparsers.add_parser("sleep")
+    sleep_sub = sleep.add_subparsers(dest="sleep_command", required=True)
+
+    sleep_analyze = sleep_sub.add_parser("analyze")
+    sleep_analyze.add_argument("--days", type=int, default=30)
+    sleep_analyze.add_argument("--format", choices=["json", "text"], default="json")
+
+    sleep_daily = sleep_sub.add_parser("daily")
+    sleep_daily.add_argument("--date", required=True)
+    sleep_daily.add_argument("--format", choices=["json", "text"], default="json")
 
     artifact = subparsers.add_parser("artifact")
     artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
@@ -59,8 +76,54 @@ def main(argv: list[str] | None = None) -> int:
             print(f"date={summary.date} sleep_hours={summary.sleep_hours} steps={summary.steps}")
         return 0
 
+    if args.command == "sleep" and args.sleep_command == "analyze":
+        initialize_database(settings.db_path)
+        samples = query_sleep_samples(db_path=settings.db_path)
+        analysis = compute_analysis(samples, args.days, settings.timezone)
+        if args.format == "json":
+            print(json.dumps(analysis.to_dict(), indent=2, default=str))
+        else:
+            print(f"Period: {analysis.period_days} days | Samples: {analysis.total_samples}")
+            print(f"Days with data: {analysis.days_with_data} | Missing: {analysis.days_missing}")
+            print(f"Avg sleep: {analysis.avg_sleep_hours}h | Deep: {analysis.avg_deep_hours}h | Core: {analysis.avg_core_hours}h | REM: {analysis.avg_rem_hours}h")
+            if analysis.avg_bedtime:
+                print(f"Avg bedtime: {analysis.avg_bedtime} | Avg wake: {analysis.avg_wake_time}")
+            if analysis.avg_efficiency:
+                print(f"Avg efficiency: {analysis.avg_efficiency}%")
+            for d in analysis.daily:
+                if d.sample_count > 0:
+                    marker = " (nap)" if d.has_nap else ""
+                    print(f"  {d.date}: {d.total_sleep_hours}h sleep, {d.deep_sleep_hours}h deep, {d.rem_sleep_hours}h REM{marker}")
+                else:
+                    print(f"  {d.date}: no data")
+        return 0
+
+    if args.command == "sleep" and args.sleep_command == "daily":
+        initialize_database(settings.db_path)
+        samples = query_sleep_samples(db_path=settings.db_path)
+        days_map = assign_samples_to_days(samples, settings.timezone)
+        day_samples = days_map.get(args.date, [])
+        metrics = compute_day_metrics(day_samples, args.date, settings.timezone)
+        if args.format == "json":
+            print(json.dumps(metrics.to_dict(), indent=2))
+        else:
+            print(f"Date: {metrics.date} | Samples: {metrics.sample_count}")
+            print(f"Sleep: {metrics.total_sleep_hours}h | In bed: {metrics.total_in_bed_hours}h")
+            if metrics.bedtime:
+                print(f"Bedtime: {metrics.bedtime} | Wake: {metrics.wake_time}")
+            print(f"Deep: {metrics.deep_sleep_hours}h | Core: {metrics.core_sleep_hours}h | REM: {metrics.rem_sleep_hours}h | Awake: {metrics.awake_hours}h")
+            if metrics.sleep_efficiency:
+                print(f"Efficiency: {metrics.sleep_efficiency}%")
+            if metrics.has_nap:
+                print("(nap)")
+        return 0
+
     if args.command == "artifact" and args.artifact_command == "daily-card":
+        initialize_database(settings.db_path)
+        samples = query_sleep_samples(db_path=settings.db_path)
+        metrics = compute_day_metrics(samples, args.date, settings.timezone)
         summary = build_default_daily_summary(args.date, settings.timezone)
+        summary.sleep_hours = metrics.total_sleep_hours
         output = render_daily_card_svg(summary, Path(args.output))
         print(json.dumps({"status": "written", "output": str(output)}, indent=2))
         return 0
