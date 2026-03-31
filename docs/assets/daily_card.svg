@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0f172a"/>
+  <text x="48" y="72" fill="#e2e8f0" font-size="36" font-family="Menlo, monospace">Health Quantification</text>
+  <text x="48" y="118" fill="#94a3b8" font-size="24" font-family="Menlo, monospace">Date: 2026-03-30 | TZ: America/Los_Angeles</text>
+  <rect x="48" y="150" width="864" height="260" rx="24" fill="#111827" stroke="#334155"/>
+  <text x="80" y="205" fill="#f8fafc" font-size="26" font-family="Menlo, monospace">Sleep: n/a</text>
+  <text x="80" y="250" fill="#f8fafc" font-size="26" font-family="Menlo, monospace">RHR: n/a</text>
+  <text x="80" y="295" fill="#f8fafc" font-size="26" font-family="Menlo, monospace">HRV: n/a</text>
+  <text x="80" y="340" fill="#f8fafc" font-size="26" font-family="Menlo, monospace">Steps: n/a</text>
+  <text x="80" y="385" fill="#f8fafc" font-size="26" font-family="Menlo, monospace">Active Energy: n/a</text>
+  <rect x="48" y="438" width="864" height="58" rx="16" fill="#1e293b"/>
+  <text x="80" y="474" fill="#cbd5e1" font-size="20" font-family="Menlo, monospace">Notes: phase_1_placeholder | native_apple_health_ingest_not_implemented</text>
+</svg>
