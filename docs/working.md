@@ -10,6 +10,8 @@
 - Skill file 更新：反映 Phase 2 全部数据类型和 CLI 子命令。
 - Security review 通过：所有待 push 的 commit（`7814997..213de0e`）中无密钥、无 Tailscale 内网 IP/域名、无个人数据。
 - 修复空 samples 导致 422：body/lifestyle 无数据时跳过 POST，显示 "no data"。
+- 新增测试覆盖：Python 端 empty samples 422、invalid data_type 422（61 tests pass）；iOS 端 normalizedStageValue（14 tests pass）。
+- 更新 README、PRD、RFC、skill file 反映 Phase 2 全部数据类型和 iOS 简化 UI。
 
 ### 2026-03-31 (UI simplification & partial auth handling)
 

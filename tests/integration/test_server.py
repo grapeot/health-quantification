@@ -430,3 +430,27 @@ def test_invalid_request_body_returns_422(
         assert response.status_code == 422
 
     run_async_test(tmp_path, assertion)
+
+
+@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity"])
+def test_empty_samples_list_returns_422(tmp_path: Path, endpoint: str) -> None:
+    async def assertion(client: AsyncClient) -> None:
+        payload = {
+            "source": "apple_health_ios",
+            "exported_at": "2026-03-31T02:35:56Z",
+            "schema_version": "0.1.0",
+            "samples": [],
+        }
+        response = await client.post(f"/ingest/{endpoint}", json=payload)
+        assert response.status_code == 422
+
+    run_async_test(tmp_path, assertion)
+
+
+@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity"])
+def test_unknown_endpoint_returns_422(tmp_path: Path, endpoint: str) -> None:
+    async def assertion(client: AsyncClient) -> None:
+        response = await client.get("/ingest/nonexistent_type")
+        assert response.status_code == 422
+
+    run_async_test(tmp_path, assertion)

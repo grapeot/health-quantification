@@ -29,4 +29,15 @@ final class HealthKitServiceTests: XCTestCase {
         let date = try XCTUnwrap(components.date)
         XCTAssertEqual(HealthKitService.isoTimestamp(date), "2026-03-31T02:35:56Z")
     }
+
+    @MainActor
+    func testNormalizedStageValueMapsAllKnownValuesAndUnknown() {
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.inBed.rawValue), 0)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.awake.rawValue), 1)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.asleepCore.rawValue), 2)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.asleepDeep.rawValue), 3)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.asleepREM.rawValue), 4)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue), 5)
+        XCTAssertEqual(HealthKitService.normalizedStageValue(for: -1), -1)
+    }
 }

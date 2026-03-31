@@ -341,9 +341,10 @@ CREATE TABLE IF NOT EXISTS activity_samples (
 
 ### iOS app
 
-- `HealthKitDiagnosticsModel`：HealthKit 读取服务（扩展为读取所有数据类型）
+- `HealthKitDiagnosticsModel`：HealthKit 读取服务（读取所有数据类型，部分授权拒绝时返回空数组）
 - `IngestClient`：HTTP POST 到 FastAPI（支持所有 endpoint）
-- `ContentView`：诊断 + 导出 UI（Server URL 通过 @AppStorage/UserDefaults 持久化）
+- `ContentView`：诊断 + 导出 UI（Server URL 通过 @AppStorage/UserDefaults 持久化，单按钮 Export All）
+- `Info.plist`：ATS 使用 `NSAllowsArbitraryLoads`（个人项目 + Tailscale 加密内网）
 
 ## CLI 合同
 
