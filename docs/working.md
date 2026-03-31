@@ -2,6 +2,14 @@
 
 ## Changelog
 
+### 2026-03-31 (ATS fix & server update)
+
+- ATS 改用 `NSAllowsArbitraryLoads` 替代 `NSExceptionDomains`，因为 iOS 不支持 `.` 开头的通配子域名（`.ts.net` 无效）。
+- 给 export status 区域加 `.textSelection(.enabled)`，支持长按复制错误信息。
+- 远端 server 通过 pm2 restart 更新，`db init` 创建了 Phase 2 四张新表（vitals/body/lifestyle/activity）。
+- Skill file 更新：反映 Phase 2 全部数据类型和 CLI 子命令。
+- Security review 通过：所有待 push 的 commit（`7814997..213de0e`）中无密钥、无 Tailscale 内网 IP/域名、无个人数据。
+
 ### 2026-03-31 (UI simplification & partial auth handling)
 
 - UI 简化：移除 "Export Sleep (30 days)" 按钮，只保留一个 "Export All (30 days)" 按钮；更新副标题为 "Export HealthKit data to your backend"。

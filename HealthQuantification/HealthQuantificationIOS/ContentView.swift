@@ -78,6 +78,7 @@ struct ContentView: View {
                     Text(exportStatusDetail)
                         .font(.system(.body, design: .monospaced))
                         .accessibilityIdentifier("exportStatusDetail")
+                        .textSelection(.enabled)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
