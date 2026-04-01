@@ -27,6 +27,10 @@ struct IngestClient {
         try await ingest(samples: samples, endpointName: "activity", serverURL: serverURL)
     }
 
+    func ingestWorkouts(serverURL: URL, samples: [WorkoutRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "workouts", serverURL: serverURL)
+    }
+
     private func ingest<Sample: Codable & Equatable>(samples: [Sample], endpointName: String, serverURL: URL) async throws -> IngestResponse {
         let endpoint = serverURL.appending(path: "ingest").appending(path: endpointName)
         var request = URLRequest(url: endpoint)

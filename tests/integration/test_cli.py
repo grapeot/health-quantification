@@ -9,6 +9,7 @@ from health_quantification.storage import (
     upsert_body_samples,
     upsert_lifestyle_samples,
     upsert_vitals_samples,
+    upsert_workout_samples,
 )
 
 
@@ -87,6 +88,24 @@ def test_phase_2_cli_commands_run(tmp_path, monkeypatch, capsys) -> None:
             }
         ],
     )
+    upsert_workout_samples(
+        db_path,
+        [
+            {
+                "source": "apple_health_ios",
+                "source_id": "workout-1",
+                "workout_type": "HIIT",
+                "start_at": "2026-03-31T08:00:00Z",
+                "end_at": "2026-03-31T08:30:00Z",
+                "duration_seconds": 1800.0,
+                "total_energy_burned": 280.0,
+                "total_distance_meters": None,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            }
+        ],
+    )
 
     commands = [
         (["vitals", "analyze", "--days", "30", "--metric", "resting_heart_rate", "--format", "json"], "metric_type", "resting_heart_rate"),
@@ -97,6 +116,8 @@ def test_phase_2_cli_commands_run(tmp_path, monkeypatch, capsys) -> None:
         (["lifestyle", "daily", "--date", "2026-03-31", "--format", "json"], "data_type", "lifestyle"),
         (["activity", "analyze", "--days", "30", "--metric", "step_count", "--format", "json"], "metric_type", "step_count"),
         (["activity", "daily", "--date", "2026-03-31", "--format", "json"], "data_type", "activity"),
+        (["workouts", "analyze", "--days", "30", "--format", "json"], "metric_type", "duration_seconds"),
+        (["workouts", "daily", "--date", "2026-03-31", "--format", "json"], "data_type", "workouts"),
     ]
 
     for argv, field_name, expected in commands:

@@ -175,6 +175,40 @@ def build_activity_payload() -> dict[str, object]:
     }
 
 
+def build_workout_payload() -> dict[str, object]:
+    return {
+        "source": "apple_health_ios",
+        "exported_at": "2026-03-31T02:35:56Z",
+        "schema_version": "0.1.0",
+        "samples": [
+            {
+                "source_id": "workout-1",
+                "workout_type": "HIIT",
+                "start_at": "2026-03-31T08:00:00Z",
+                "end_at": "2026-03-31T08:30:00Z",
+                "duration_seconds": 1800.0,
+                "total_energy_burned": 280.0,
+                "total_distance_meters": None,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {"device": "watch"},
+            },
+            {
+                "source_id": "workout-2",
+                "workout_type": "Outdoor Run",
+                "start_at": "2026-04-01T08:00:00Z",
+                "end_at": "2026-04-01T08:45:00Z",
+                "duration_seconds": 2700.0,
+                "total_energy_burned": 420.0,
+                "total_distance_meters": 5000.0,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {"device": "watch"},
+            },
+        ],
+    }
+
+
 def run_async_test(
     tmp_path: Path,
     assertion_coro: Callable[[AsyncClient], Awaitable[None]],
@@ -197,6 +231,7 @@ def run_async_test(
         ("body", build_body_payload, 2),
         ("lifestyle", build_lifestyle_payload, 2),
         ("activity", build_activity_payload, 2),
+        ("workouts", build_workout_payload, 2),
     ],
 )
 def test_post_endpoint_returns_counts(
@@ -225,6 +260,7 @@ def test_post_endpoint_returns_counts(
         ("body", build_body_payload, 2),
         ("lifestyle", build_lifestyle_payload, 2),
         ("activity", build_activity_payload, 2),
+        ("workouts", build_workout_payload, 2),
     ],
 )
 def test_post_endpoint_is_idempotent(
@@ -306,6 +342,17 @@ def test_post_endpoint_is_idempotent(
             "activity-1",
             "step_count",
         ),
+        (
+            "workouts",
+            build_workout_payload,
+            {
+                "from_date": "2026-03-31",
+                "to_date": "2026-03-31",
+                "source": "apple_health_ios",
+            },
+            "workout-1",
+            None,
+        ),
     ],
 )
 def test_get_endpoint_supports_filters(
@@ -337,6 +384,7 @@ def test_get_endpoint_supports_filters(
         ("body", build_body_payload, 2),
         ("lifestyle", build_lifestyle_payload, 2),
         ("activity", build_activity_payload, 2),
+        ("workouts", build_workout_payload, 2),
     ],
 )
 def test_delete_endpoint_cleans_up_rows(
@@ -418,6 +466,15 @@ def test_health_endpoint_returns_status(tmp_path: Path) -> None:
                 "samples": [{"source_id": "broken-sample", "metric_type": "distance_walking_running"}],
             },
         ),
+        (
+            "workouts",
+            {
+                "source": "apple_health_ios",
+                "exported_at": "2026-03-31T02:35:56Z",
+                "schema_version": "0.1.0",
+                "samples": [{"source_id": "broken-sample", "workout_type": "HIIT"}],
+            },
+        ),
     ],
 )
 def test_invalid_request_body_returns_422(
@@ -432,7 +489,7 @@ def test_invalid_request_body_returns_422(
     run_async_test(tmp_path, assertion)
 
 
-@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity"])
+@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity", "workouts"])
 def test_empty_samples_list_returns_422(tmp_path: Path, endpoint: str) -> None:
     async def assertion(client: AsyncClient) -> None:
         payload = {
@@ -447,7 +504,7 @@ def test_empty_samples_list_returns_422(tmp_path: Path, endpoint: str) -> None:
     run_async_test(tmp_path, assertion)
 
 
-@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity"])
+@pytest.mark.parametrize("endpoint", ["sleep", "vitals", "body", "lifestyle", "activity", "workouts"])
 def test_unknown_endpoint_returns_422(tmp_path: Path, endpoint: str) -> None:
     async def assertion(client: AsyncClient) -> None:
         response = await client.get("/ingest/nonexistent_type")

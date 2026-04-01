@@ -422,6 +422,78 @@ final class HealthKitService {
         return records
     }
 
+    func fetchWorkoutSamples(days: Int) async throws -> [WorkoutRecord] {
+        runDoctor()
+
+        guard HKHealthStore.isHealthDataAvailable() || isUITestMockHealthDataAvailable else {
+            authorizationState = "health_data_unavailable"
+            appendLog(title: "fetchWorkoutSamples", payload: ["result": authorizationState])
+            return []
+        }
+
+        let workoutType = HKWorkoutType.workoutType()
+
+        if !isUITestMockHealthDataAvailable {
+            do {
+                try await requestReadAuthorization(readTypes: [workoutType])
+            } catch HealthKitServiceError.authorizationDenied {
+                appendLog(title: "fetchWorkoutSamples", payload: ["result": "not_authorized"])
+                return []
+            }
+        } else {
+            authorizationState = "granted"
+        }
+
+        let now = Date()
+        let startDate = Calendar.current.date(byAdding: .day, value: -days, to: now) ?? now
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: [])
+        let sortDescriptors = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+
+        let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: workoutType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: sortDescriptors
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            self.healthStore.execute(query)
+        }
+
+        let records = workouts.map { workout in
+            WorkoutRecord(
+                source_id: workout.uuid.uuidString,
+                workout_type: workout.workoutActivityType.exportName,
+                start_at: Self.isoTimestamp(workout.startDate),
+                end_at: Self.isoTimestamp(workout.endDate),
+                duration_seconds: workout.duration,
+                total_energy_burned: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                total_distance_meters: workout.totalDistance?.doubleValue(for: .meter()),
+                source_bundle_id: workout.sourceRevision.source.bundleIdentifier,
+                source_name: workout.sourceRevision.source.name,
+                metadata: [:]
+            )
+        }
+
+        authorizationState = "granted"
+        lastUpdated = Self.isoTimestamp(now)
+        appendLog(
+            title: "fetchWorkoutSamples",
+            payload: [
+                "days": String(days),
+                "samples": String(records.count),
+                "timestamp": lastUpdated,
+            ]
+        )
+        return records
+    }
+
     nonisolated static func stageName(for rawValue: Int) -> String {
         guard let stage = HKCategoryValueSleepAnalysis(rawValue: rawValue) else {
             return "unknown"
@@ -617,6 +689,7 @@ final class HealthKitService {
         if let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) {
             readTypes.insert(stepCountType)
         }
+        readTypes.insert(HKWorkoutType.workoutType())
 
         return readTypes
     }
@@ -624,6 +697,9 @@ final class HealthKitService {
     private func vitalsQuantityConfigurations() -> [QuantitySampleConfiguration] {
         [
             quantityConfiguration(identifier: .restingHeartRate, metricType: "resting_heart_rate", unitLabel: "count/min") { quantity in
+                quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            },
+            quantityConfiguration(identifier: .heartRate, metricType: "heart_rate", unitLabel: "count/min") { quantity in
                 quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
             },
             quantityConfiguration(identifier: .heartRateVariabilitySDNN, metricType: "heart_rate_variability_sdnn", unitLabel: "ms") { quantity in
@@ -634,6 +710,9 @@ final class HealthKitService {
             },
             quantityConfiguration(identifier: .oxygenSaturation, metricType: "oxygen_saturation", unitLabel: "%") { quantity in
                 quantity.doubleValue(for: .percent()) * 100.0
+            },
+            quantityConfiguration(identifier: .activeEnergyBurned, metricType: "active_energy_burned", unitLabel: "kcal") { quantity in
+                quantity.doubleValue(for: .kilocalorie())
             },
         ].compactMap { $0 }
     }
@@ -700,6 +779,183 @@ private struct QuantitySampleConfiguration {
     let metricType: String
     let unitLabel: String
     let transform: (HKQuantity) -> Double
+}
+
+private extension HKWorkoutActivityType {
+    var exportName: String {
+        switch self {
+        case .americanFootball:
+            return "americanFootball"
+        case .archery:
+            return "archery"
+        case .australianFootball:
+            return "australianFootball"
+        case .badminton:
+            return "badminton"
+        case .baseball:
+            return "baseball"
+        case .basketball:
+            return "basketball"
+        case .bowling:
+            return "bowling"
+        case .boxing:
+            return "boxing"
+        case .climbing:
+            return "climbing"
+        case .crossTraining:
+            return "crossTraining"
+        case .cricket:
+            return "cricket"
+        case .curling:
+            return "curling"
+        case .cycling:
+            return "cycling"
+        case .dance:
+            return "dance"
+        case .danceInspiredTraining:
+            return "danceInspiredTraining"
+        case .elliptical:
+            return "elliptical"
+        case .equestrianSports:
+            return "equestrianSports"
+        case .fencing:
+            return "fencing"
+        case .fishing:
+            return "fishing"
+        case .functionalStrengthTraining:
+            return "functionalStrengthTraining"
+        case .golf:
+            return "golf"
+        case .gymnastics:
+            return "gymnastics"
+        case .handball:
+            return "handball"
+        case .hiking:
+            return "hiking"
+        case .hockey:
+            return "hockey"
+        case .hunting:
+            return "hunting"
+        case .lacrosse:
+            return "lacrosse"
+        case .martialArts:
+            return "martialArts"
+        case .mindAndBody:
+            return "mindAndBody"
+        case .mixedMetabolicCardioTraining:
+            return "mixedMetabolicCardioTraining"
+        case .paddleSports:
+            return "paddleSports"
+        case .play:
+            return "play"
+        case .preparationAndRecovery:
+            return "preparationAndRecovery"
+        case .racquetball:
+            return "racquetball"
+        case .rowing:
+            return "rowing"
+        case .rugby:
+            return "rugby"
+        case .running:
+            return "running"
+        case .sailing:
+            return "sailing"
+        case .skatingSports:
+            return "skatingSports"
+        case .snowSports:
+            return "snowSports"
+        case .soccer:
+            return "soccer"
+        case .softball:
+            return "softball"
+        case .squash:
+            return "squash"
+        case .stairClimbing:
+            return "stairClimbing"
+        case .surfingSports:
+            return "surfingSports"
+        case .swimming:
+            return "swimming"
+        case .tableTennis:
+            return "tableTennis"
+        case .tennis:
+            return "tennis"
+        case .trackAndField:
+            return "trackAndField"
+        case .traditionalStrengthTraining:
+            return "traditionalStrengthTraining"
+        case .volleyball:
+            return "volleyball"
+        case .walking:
+            return "walking"
+        case .waterFitness:
+            return "waterFitness"
+        case .waterPolo:
+            return "waterPolo"
+        case .waterSports:
+            return "waterSports"
+        case .wrestling:
+            return "wrestling"
+        case .yoga:
+            return "yoga"
+        case .barre:
+            return "barre"
+        case .coreTraining:
+            return "coreTraining"
+        case .crossCountrySkiing:
+            return "crossCountrySkiing"
+        case .downhillSkiing:
+            return "downhillSkiing"
+        case .flexibility:
+            return "flexibility"
+        case .highIntensityIntervalTraining:
+            return "HIIT"
+        case .jumpRope:
+            return "jumpRope"
+        case .kickboxing:
+            return "kickboxing"
+        case .pilates:
+            return "pilates"
+        case .snowboarding:
+            return "snowboarding"
+        case .stairs:
+            return "stairs"
+        case .stepTraining:
+            return "stepTraining"
+        case .wheelchairWalkPace:
+            return "wheelchairWalkPace"
+        case .wheelchairRunPace:
+            return "wheelchairRunPace"
+        case .taiChi:
+            return "taiChi"
+        case .mixedCardio:
+            return "mixedCardio"
+        case .handCycling:
+            return "handCycling"
+        case .discSports:
+            return "discSports"
+        case .fitnessGaming:
+            return "fitnessGaming"
+        case .cardioDance:
+            return "cardioDance"
+        case .socialDance:
+            return "socialDance"
+        case .pickleball:
+            return "pickleball"
+        case .cooldown:
+            return "cooldown"
+        case .swimBikeRun:
+            return "swimBikeRun"
+        case .transition:
+            return "transition"
+        case .underwaterDiving:
+            return "underwaterDiving"
+        case .other:
+            return "other"
+        @unknown default:
+            return "other_\(rawValue)"
+        }
+    }
 }
 
 enum HealthKitServiceError: LocalizedError {

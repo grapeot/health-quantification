@@ -28,6 +28,7 @@ iPhone (HealthKit) --POST--> Mac (FastAPI:7996) --write--> SQLite
 | 活动 | 步数 | Apple Watch / iPhone 自动 |
 | 体测 | 体重, 血糖, 血压 | WiFi 秤 / CGM / 蓝牙血压计 |
 | 生活方式 | 咖啡因, 酒精 | Siri / Apple Health 手动记录 |
+| 运动记录 | 类型、时长、卡路里、距离 | Apple Watch structured workouts |
 
 ## 如何使用（通过 AI）
 
@@ -80,6 +81,9 @@ python -m health_quantification.cli vitals analyze --days 30 --format json
 python -m health_quantification.cli body analyze --days 30 --format json
 python -m health_quantification.cli lifestyle analyze --days 30 --format json
 python -m health_quantification.cli activity analyze --days 30 --format json
+python -m health_quantification.cli vitals analyze --days 30 --metric heart_rate --format json
+python -m health_quantification.cli vitals analyze --days 30 --metric active_energy_burned --format json
+python -m health_quantification.cli workouts analyze --days 30 --format json
 ```
 
 CLI 只输出数据。所有分析逻辑、可视化、报告格式由 AI 决定。

@@ -24,6 +24,7 @@ from health_quantification.storage import (
     query_lifestyle_samples,
     query_sleep_samples,
     query_vitals_samples,
+    query_workout_samples,
     record_sample,
 )
 
@@ -58,6 +59,28 @@ def _add_metric_commands(command_name: str, subparsers: argparse._SubParsersActi
     daily = command_sub.add_parser("daily")
     daily.add_argument("--date", required=True)
     daily.add_argument("--format", choices=["json", "text"], default="json")
+
+
+def _workout_samples_as_metric_rows(samples: list[dict[str, object]]) -> list[dict[str, object]]:
+    metric_rows: list[dict[str, object]] = []
+    for sample in samples:
+        duration_seconds = sample.get("duration_seconds")
+        start_at = sample.get("start_at")
+        end_at = sample.get("end_at")
+        if not isinstance(duration_seconds, (int, float)):
+            continue
+        if not isinstance(start_at, str) or not isinstance(end_at, str):
+            continue
+        metric_rows.append(
+            {
+                "metric_type": "duration_seconds",
+                "value": float(duration_seconds),
+                "unit": "seconds",
+                "start_at": start_at,
+                "end_at": end_at,
+            }
+        )
+    return metric_rows
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,6 +125,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     for command_name in ("vitals", "body", "lifestyle", "activity"):
         _add_metric_commands(command_name, subparsers)
+
+    workouts = subparsers.add_parser("workouts")
+    workouts_sub = workouts.add_subparsers(dest="workouts_command", required=True)
+
+    workouts_analyze = workouts_sub.add_parser("analyze")
+    workouts_analyze.add_argument("--days", type=int, default=30)
+    workouts_analyze.add_argument("--format", choices=["json", "text"], default="json")
+
+    workouts_daily = workouts_sub.add_parser("daily")
+    workouts_daily.add_argument("--date", required=True)
+    workouts_daily.add_argument("--format", choices=["json", "text"], default="json")
 
     return parser
 
@@ -286,6 +320,35 @@ def main(argv: list[str] | None = None) -> int:
             args=args,
             timezone=settings.timezone,
         )
+
+    if args.command == "workouts":
+        samples = _workout_samples_as_metric_rows(query_workout_samples(db_path=settings.db_path))
+        if args.workouts_command == "analyze":
+            summary = compute_metric_analysis(
+                samples=samples,
+                data_type="workouts",
+                metric_type="duration_seconds",
+                days=args.days,
+                tz_name=settings.timezone,
+            )
+            if args.format == "json":
+                print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+            else:
+                _print_metric_analysis_text(summary)
+            return 0
+
+        if args.workouts_command == "daily":
+            summary = compute_metric_daily_summary(
+                samples=samples,
+                data_type="workouts",
+                date_str=args.date,
+                tz_name=settings.timezone,
+            )
+            if args.format == "json":
+                print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+            else:
+                _print_metric_daily_text(summary)
+            return 0
 
     parser.error("unsupported command")
     return 2

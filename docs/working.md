@@ -4,6 +4,16 @@
 
 ### 2026-03-31 (Sleep nap separation, absolute DB path)
 
+### 2026-03-31 (Workout tracking, continuous heart rate, active energy)
+
+- 新增 workouts 表和 POST /ingest/workouts endpoint：记录 Apple Watch structured workouts（类型、时长、卡路里、距离）。
+- 新增连续心率（heart_rate）和活动消耗（active_energy_burned）到 vitals 数据类型，通过现有 /ingest/vitals endpoint 接入。
+- iOS 端新增 HKWorkoutQuery 读取 workouts，扩展 vitals 查询支持 heartRate 和 activeEnergyBurned。
+- 新增 WorkoutRecord Swift 模型，IngestClient 新增 workouts POST。
+- CLI 新增 workouts analyze/daily 子命令。
+- 新增测试覆盖：workout 模型验证、endpoint 幂等性、CLI smoke test。总测试数 91。
+- Python 91 tests pass，iOS xcodebuild build succeeded。
+
 - 修复 config.py 使用相对路径 `data/health_quantification.db` 的隐患：改为基于 `__file__` 解析项目根目录的绝对路径，CLI 从任何 cwd 运行都指向同一个 DB。
 - 修复睡眠分析中主睡眠与午睡混算的 bug：`compute_day_metrics` 现在先将同一天的 samples 按时间 gap（>2h）拆分为多个 session，取 asleep 时间最长的作为主睡眠，其余归为午睡。
 - `DaySleepMetrics` 新增 `nap_hours` 字段，bedtime/wake_time/stage_hours 只从主睡眠计算，`total_sleep_hours` 包含主睡眠+午睡。

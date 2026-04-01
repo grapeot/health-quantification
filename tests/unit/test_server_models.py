@@ -13,6 +13,7 @@ from health_quantification.server import (
     LifestyleIngestRequest,
     SleepIngestRequest,
     VitalsIngestRequest,
+    WorkoutIngestRequest,
 )
 
 
@@ -117,6 +118,28 @@ def build_activity_payload() -> dict[str, object]:
     }
 
 
+def build_workout_payload() -> dict[str, object]:
+    return {
+        "source": "apple_health_ios",
+        "exported_at": "2026-03-31T02:35:56Z",
+        "schema_version": "0.1.0",
+        "samples": [
+            {
+                "source_id": "workout-1",
+                "workout_type": "HIIT",
+                "start_at": "2026-03-31T08:00:00Z",
+                "end_at": "2026-03-31T08:30:00Z",
+                "duration_seconds": 1800.0,
+                "total_energy_burned": 280.0,
+                "total_distance_meters": None,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            }
+        ],
+    }
+
+
 def test_sleep_ingest_request_accepts_valid_payload() -> None:
     request = SleepIngestRequest.model_validate(build_sleep_payload())
     assert request.source == "apple_health_ios"
@@ -134,13 +157,21 @@ def test_sleep_ingest_request_accepts_valid_payload() -> None:
     ],
 )
 def test_phase_2_ingest_requests_accept_valid_payloads(
-    request_model: type[VitalsIngestRequest | BodyIngestRequest | LifestyleIngestRequest | ActivityIngestRequest],
+    request_model: type[
+        VitalsIngestRequest | BodyIngestRequest | LifestyleIngestRequest | ActivityIngestRequest
+    ],
     payload_builder: Callable[[], dict[str, object]],
     metric_type: str,
 ) -> None:
     request = request_model.model_validate(payload_builder())
     assert request.source == "apple_health_ios"
     assert request.samples[0].metric_type == metric_type
+
+
+def test_workout_ingest_request_accepts_valid_payload() -> None:
+    request = WorkoutIngestRequest.model_validate(build_workout_payload())
+    assert request.source == "apple_health_ios"
+    assert request.samples[0].workout_type == "HIIT"
 
 
 @pytest.mark.parametrize(
@@ -151,10 +182,18 @@ def test_phase_2_ingest_requests_accept_valid_payloads(
         (BodyIngestRequest, build_body_payload),
         (LifestyleIngestRequest, build_lifestyle_payload),
         (ActivityIngestRequest, build_activity_payload),
+        (WorkoutIngestRequest, build_workout_payload),
     ],
 )
 def test_ingest_requests_reject_missing_samples(
-    request_model: type[SleepIngestRequest | VitalsIngestRequest | BodyIngestRequest | LifestyleIngestRequest | ActivityIngestRequest],
+    request_model: type[
+        SleepIngestRequest
+        | VitalsIngestRequest
+        | BodyIngestRequest
+        | LifestyleIngestRequest
+        | ActivityIngestRequest
+        | WorkoutIngestRequest
+    ],
     payload_builder: Callable[[], dict[str, object]],
 ) -> None:
     payload = dict(payload_builder())
@@ -184,6 +223,13 @@ def test_phase_2_ingest_requests_reject_unknown_metric_type(
     payload["samples"] = [invalid_sample]
     with pytest.raises(ValidationError):
         _ = request_model.model_validate(payload)
+
+
+def test_workout_ingest_request_rejects_unknown_fields() -> None:
+    payload = dict(build_workout_payload())
+    payload["unexpected"] = True
+    with pytest.raises(ValidationError):
+        _ = WorkoutIngestRequest.model_validate(payload)
 
 
 def test_sleep_ingest_request_rejects_unknown_fields() -> None:

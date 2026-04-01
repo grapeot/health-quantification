@@ -85,7 +85,7 @@ AI 对话 --CLI record-->                                          --> 分析报
 }
 ```
 
-`metric_type` 取值：`resting_heart_rate` | `heart_rate_variability_sdnn` | `respiratory_rate` | `oxygen_saturation`
+`metric_type` 取值：`resting_heart_rate` | `heart_rate` | `heart_rate_variability_sdnn` | `respiratory_rate` | `oxygen_saturation` | `active_energy_burned`
 
 ### POST /ingest/body
 
@@ -169,9 +169,39 @@ AI 对话 --CLI record-->                                          --> 分析报
 }
 ```
 
+
+### POST /ingest/workouts
+
+接收 structured workout 记录，幂等写入。幂等键为 `(source, source_id)`。
+
+请求体：
+```json
+{
+  "source": "apple_health_ios",
+  "exported_at": "ISO8601",
+  "schema_version": "0.1.0",
+  "samples": [
+    {
+      "source_id": "UUID from HealthKit",
+      "workout_type": "HIIT",
+      "start_at": "ISO8601",
+      "end_at": "ISO8601",
+      "duration_seconds": 1800.0,
+      "total_energy_burned": 280.0,
+      "total_distance_meters": null,
+      "source_bundle_id": "com.apple.health",
+      "source_name": "Health",
+      "metadata": {}
+    }
+  ]
+}
+```
+
+`workout_type` 取值：Apple Health `HKWorkoutActivityType` 名称（如 `running`、`traditionalStrengthTraining`、`HIIT`、`other`）。
+
 ### GET /ingest/{data_type}
 
-查询已入库数据。`data_type` 取值：`sleep` | `vitals` | `body` | `lifestyle` | `activity`。支持 `from_date`、`to_date`、`source`、`metric_type` 过滤。
+查询已入库数据。`data_type` 取值：`sleep` | `vitals` | `body` | `lifestyle` | `activity` | `workouts`。支持 `from_date`、`to_date`、`source`、`metric_type` 过滤。
 
 ### DELETE /ingest/{data_type}?source=<source>
 
@@ -286,6 +316,29 @@ CREATE TABLE IF NOT EXISTS activity_samples (
 )
 ```
 
+
+### workouts 表
+
+```sql
+CREATE TABLE IF NOT EXISTS workouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    workout_type TEXT NOT NULL,
+    start_at TEXT NOT NULL,
+    end_at TEXT NOT NULL,
+    duration_seconds REAL,
+    total_energy_burned REAL,
+    total_distance_meters REAL,
+    source_bundle_id TEXT,
+    source_name TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source, source_id)
+)
+```
+
 ## HealthKit Type 映射
 
 ### Sleep（Phase 1）
@@ -331,6 +384,13 @@ CREATE TABLE IF NOT EXISTS activity_samples (
 | HKQuantityTypeIdentifier.stepCount | step_count | count |
 
 ## 模块边界
+
+### Workouts
+
+| HealthKit Type | workout_type |
+|---|---|
+| HKWorkoutType.workoutType() | HKWorkoutActivityType 名称（running, traditionalStrengthTraining, HIIT, other 等） |
+
 
 ### Python 包
 
@@ -404,7 +464,7 @@ python -m health_quantification.cli activity analyze --days 30 --metric step_cou
 - 电子纸显示与自动部署
 - 解释层、建议层、告警层（由 AI 分析完成，不固化到 CLI）
 - iOS 后台自动刷新（BGTaskScheduler）
-- 饮水量、营养日志、详细运动记录（workouts）
+- 饮水量、营养日志
 
 ## Phase 3: AI 驱动的知识库
 

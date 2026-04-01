@@ -64,7 +64,7 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Exports: sleep → /ingest/sleep, vitals → /ingest/vitals, body → /ingest/body, lifestyle → /ingest/lifestyle, activity → /ingest/activity")
+                    Text("Exports: sleep → /ingest/sleep, vitals → /ingest/vitals, body → /ingest/body, lifestyle → /ingest/lifestyle, activity → /ingest/activity, workouts → /ingest/workouts")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -122,7 +122,7 @@ struct ContentView: View {
 
         isExporting = true
         exportStatusTitle = "Exporting all HealthKit data"
-        exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, and activity samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
+        exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, and workout samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
         var resultLines: [String] = []
@@ -184,6 +184,16 @@ struct ContentView: View {
             hadSuccess = true
         } catch {
             resultLines.append("activity: FAILED - \(error.localizedDescription)")
+            hadFailure = true
+        }
+
+        do {
+            let samples = try await model.fetchWorkoutSamples(days: 30)
+            let response = try await ingestClient.ingestWorkouts(serverURL: exportContext.url, samples: samples)
+            resultLines.append("workouts: sent \(samples.count), upserted \(response.upserted)")
+            hadSuccess = true
+        } catch {
+            resultLines.append("workouts: FAILED - \(error.localizedDescription)")
             hadFailure = true
         }
 
