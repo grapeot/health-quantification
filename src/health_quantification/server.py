@@ -17,27 +17,32 @@ from health_quantification.storage import (
     delete_lifestyle_samples,
     delete_sleep_samples,
     delete_vitals_samples,
+    delete_workout_samples,
     initialize_database,
     query_activity_samples,
     query_body_samples,
     query_lifestyle_samples,
     query_sleep_samples,
     query_vitals_samples,
+    query_workout_samples,
     upsert_activity_samples,
     upsert_body_samples,
     upsert_lifestyle_samples,
     upsert_sleep_samples,
     upsert_vitals_samples,
+    upsert_workout_samples,
 )
 
 API_VERSION = "0.1.0"
 StorageRow: TypeAlias = dict[str, object]
-DataTypeName = Literal["sleep", "vitals", "body", "lifestyle", "activity"]
+DataTypeName = Literal["sleep", "vitals", "body", "lifestyle", "activity", "workouts"]
 VitalsMetricType = Literal[
     "resting_heart_rate",
+    "heart_rate",
     "heart_rate_variability_sdnn",
     "respiratory_rate",
     "oxygen_saturation",
+    "active_energy_burned",
 ]
 BodyMetricType = Literal[
     "body_mass",
@@ -139,6 +144,21 @@ class ActivitySampleIn(BaseModel):
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class WorkoutSampleIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source_id: str = Field(...)
+    workout_type: str = Field(...)
+    start_at: datetime = Field(...)
+    end_at: datetime = Field(...)
+    duration_seconds: float | None = Field(None)
+    total_energy_burned: float | None = Field(None)
+    total_distance_meters: float | None = Field(None)
+    source_bundle_id: str | None = Field(None)
+    source_name: str | None = Field(None)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+
+
 class SleepIngestRequest(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
@@ -182,6 +202,15 @@ class ActivityIngestRequest(BaseModel):
     exported_at: datetime = Field(...)
     schema_version: str = Field(...)
     samples: list[ActivitySampleIn] = Field(..., min_length=1)
+
+
+class WorkoutIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[WorkoutSampleIn] = Field(..., min_length=1)
 
 
 class IngestResponse(BaseModel):
@@ -229,6 +258,23 @@ class ActivitySampleOut(BaseModel):
     metric_type: str = Field(...)
     value: float = Field(...)
     unit: str | None = Field(...)
+    source_bundle_id: str | None = Field(...)
+    source_name: str | None = Field(...)
+    metadata: dict[str, JsonValue] = Field(...)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
+
+
+class WorkoutSampleOut(BaseModel):
+    id: int = Field(...)
+    source: str = Field(...)
+    source_id: str = Field(...)
+    workout_type: str = Field(...)
+    start_at: str = Field(...)
+    end_at: str = Field(...)
+    duration_seconds: float | None = Field(...)
+    total_energy_burned: float | None = Field(...)
+    total_distance_meters: float | None = Field(...)
     source_bundle_id: str | None = Field(...)
     source_name: str | None = Field(...)
     metadata: dict[str, JsonValue] = Field(...)
@@ -294,6 +340,22 @@ def _activity_sample_to_storage_dict(source: str, sample: ActivitySampleIn) -> d
         "metric_type": sample.metric_type,
         "value": sample.value,
         "unit": sample.unit,
+        "source_bundle_id": sample.source_bundle_id,
+        "source_name": sample.source_name,
+        "metadata": sample.metadata,
+    }
+
+
+def _workout_sample_to_storage_dict(source: str, sample: WorkoutSampleIn) -> dict[str, object]:
+    return {
+        "source": source,
+        "source_id": sample.source_id,
+        "workout_type": sample.workout_type,
+        "start_at": _serialize_datetime(sample.start_at),
+        "end_at": _serialize_datetime(sample.end_at),
+        "duration_seconds": sample.duration_seconds,
+        "total_energy_burned": sample.total_energy_burned,
+        "total_distance_meters": sample.total_distance_meters,
         "source_bundle_id": sample.source_bundle_id,
         "source_name": sample.source_name,
         "metadata": sample.metadata,
@@ -385,9 +447,29 @@ def _row_to_activity_model(row: StorageRow) -> ActivitySampleOut:
     )
 
 
+def _row_to_workout_model(row: StorageRow) -> WorkoutSampleOut:
+    return WorkoutSampleOut(
+        id=_require_int(row["id"]),
+        source=_require_str(row["source"]),
+        source_id=_require_str(row["source_id"]),
+        workout_type=_require_str(row["workout_type"]),
+        start_at=_require_str(row["start_at"]),
+        end_at=_require_str(row["end_at"]),
+        duration_seconds=cast(float | None, row["duration_seconds"]),
+        total_energy_burned=cast(float | None, row["total_energy_burned"]),
+        total_distance_meters=cast(float | None, row["total_distance_meters"]),
+        source_bundle_id=_optional_str(row["source_bundle_id"]),
+        source_name=_optional_str(row["source_name"]),
+        metadata=_decode_metadata(row.get("metadata_json")),
+        created_at=_require_str(row["created_at"]),
+        updated_at=_require_str(row["updated_at"]),
+    )
+
+
 @dataclass(frozen=True)
 class DataTypeConfig:
     sleep_query_fn: Callable[[Path, str | None, str | None, str | None], list[StorageRow]] | None = None
+    time_query_fn: Callable[[Path, str | None, str | None, str | None], list[StorageRow]] | None = None
     metric_query_fn: Callable[
         [Path, str | None, str | None, str | None, str | None],
         list[StorageRow],
@@ -401,6 +483,7 @@ DATA_TYPE_CONFIG: dict[DataTypeName, DataTypeConfig] = {
     "body": DataTypeConfig(metric_query_fn=query_body_samples, delete_fn=delete_body_samples),
     "lifestyle": DataTypeConfig(metric_query_fn=query_lifestyle_samples, delete_fn=delete_lifestyle_samples),
     "activity": DataTypeConfig(metric_query_fn=query_activity_samples, delete_fn=delete_activity_samples),
+    "workouts": DataTypeConfig(time_query_fn=query_workout_samples, delete_fn=delete_workout_samples),
 }
 
 
@@ -419,6 +502,11 @@ def _query_rows(
         if query_fn is None:
             raise ValueError(f"sleep query function missing for {data_type}")
         return query_fn(db_path, from_date, to_date, source)
+    if data_type == "workouts":
+        query_fn = config.time_query_fn
+        if query_fn is None:
+            raise ValueError(f"time query function missing for {data_type}")
+        return query_fn(db_path, from_date, to_date, source)
     query_fn = config.metric_query_fn
     if query_fn is None:
         raise ValueError(f"metric query function missing for {data_type}")
@@ -428,9 +516,11 @@ def _query_rows(
 def _serialize_rows(
     data_type: DataTypeName,
     rows: list[StorageRow],
-) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut]:
+) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut | WorkoutSampleOut]:
     if data_type == "sleep":
         return [_row_to_sleep_model(row) for row in rows]
+    if data_type == "workouts":
+        return [_row_to_workout_model(row) for row in rows]
     if data_type == "activity":
         return [_row_to_activity_model(row) for row in rows]
     return [_row_to_recorded_metric_model(row) for row in rows]
@@ -446,7 +536,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description=(
             "HTTP ingestion boundary for normalized personal health data. "
             "This server exposes idempotent POST endpoints for sleep, vitals, body, "
-            "lifestyle, and activity data, plus generic query and cleanup routes."
+            "lifestyle, activity, and workout data, plus generic query and cleanup routes."
         ),
     )
 
@@ -518,9 +608,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         total_samples = len(query_activity_samples(db_path=db_path, source=request.source))
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
+    @app.post("/ingest/workouts", response_model=IngestResponse)
+    def ingest_workouts(
+        request: WorkoutIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_workout_samples(
+            db_path,
+            [_workout_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+        )
+        total_samples = len(query_workout_samples(db_path=db_path, source=request.source))
+        return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
+
     @app.get(
         "/ingest/{data_type}",
-        response_model=list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut],
+        response_model=list[
+            SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut | WorkoutSampleOut
+        ],
     )
     def get_samples(
         data_type: DataTypeName,
@@ -529,7 +633,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         to_date: Annotated[str | None, Query()] = None,
         source: Annotated[str | None, Query()] = None,
         metric_type: Annotated[str | None, Query()] = None,
-    ) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut]:
+    ) -> list[SleepSampleOut | RecordedMetricSampleOut | ActivitySampleOut | WorkoutSampleOut]:
         rows = _query_rows(
             data_type=data_type,
             db_path=db_path,

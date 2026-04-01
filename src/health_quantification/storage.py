@@ -141,6 +141,28 @@ def create_activity_table() -> str:
     """
 
 
+def create_workouts_table() -> str:
+    return """
+    CREATE TABLE IF NOT EXISTS workouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        workout_type TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT NOT NULL,
+        duration_seconds REAL,
+        total_energy_burned REAL,
+        total_distance_meters REAL,
+        source_bundle_id TEXT,
+        source_name TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(source, source_id)
+    )
+    """
+
+
 SCHEMA_STATEMENTS = [
     create_observations_table(),
     create_daily_summaries_table(),
@@ -149,6 +171,7 @@ SCHEMA_STATEMENTS = [
     create_body_table(),
     create_lifestyle_table(),
     create_activity_table(),
+    create_workouts_table(),
 ]
 
 
@@ -365,6 +388,55 @@ def upsert_activity_samples(db_path: Path, samples: list[dict[str, object]]) -> 
     )
 
 
+def upsert_workout_samples(db_path: Path, samples: list[dict[str, object]]) -> int:
+    prepared_samples = [
+        {
+            "source": sample["source"],
+            "source_id": sample["source_id"],
+            "workout_type": sample["workout_type"],
+            "start_at": sample["start_at"],
+            "end_at": sample["end_at"],
+            "duration_seconds": sample.get("duration_seconds"),
+            "total_energy_burned": sample.get("total_energy_burned"),
+            "total_distance_meters": sample.get("total_distance_meters"),
+            "source_bundle_id": sample.get("source_bundle_id"),
+            "source_name": sample.get("source_name"),
+            "metadata_json": _metadata_json(sample),
+        }
+        for sample in samples
+    ]
+    return _upsert_samples(
+        db_path,
+        table_name="workouts",
+        insert_columns=(
+            "source",
+            "source_id",
+            "workout_type",
+            "start_at",
+            "end_at",
+            "duration_seconds",
+            "total_energy_burned",
+            "total_distance_meters",
+            "source_bundle_id",
+            "source_name",
+            "metadata_json",
+        ),
+        update_columns=(
+            "workout_type",
+            "start_at",
+            "end_at",
+            "duration_seconds",
+            "total_energy_burned",
+            "total_distance_meters",
+            "source_bundle_id",
+            "source_name",
+            "metadata_json",
+        ),
+        conflict_columns=("source", "source_id"),
+        samples=prepared_samples,
+    )
+
+
 def record_sample(
     db_path: Path, data_type: str, sample: dict[str, object]
 ) -> dict[str, object]:
@@ -553,6 +625,22 @@ def query_activity_samples(
     )
 
 
+def query_workout_samples(
+    db_path: Path,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    source: str | None = None,
+) -> list[dict[str, object]]:
+    return _query_samples(
+        db_path,
+        table_name="workouts",
+        time_column="start_at",
+        from_date=from_date,
+        to_date=to_date,
+        source=source,
+    )
+
+
 def _delete_samples(db_path: Path, *, table_name: str, source: str | None = None) -> int:
     with connect(db_path) as conn:
         if source:
@@ -581,3 +669,7 @@ def delete_lifestyle_samples(db_path: Path, source: str | None = None) -> int:
 
 def delete_activity_samples(db_path: Path, source: str | None = None) -> int:
     return _delete_samples(db_path, table_name="activity_samples", source=source)
+
+
+def delete_workout_samples(db_path: Path, source: str | None = None) -> int:
+    return _delete_samples(db_path, table_name="workouts", source=source)
