@@ -2,6 +2,14 @@
 
 ## Changelog
 
+### 2026-04-01 (Sleep date assignment fix, bedtime/wake_time cross-midnight fix, --last-night CLI flag)
+
+- **修复 `assign_samples_to_days` 的日期归属逻辑**：从 per-sample `end_at` 本地日期改为 session-based 归属。每个 session 归到其最早 `start_at` 的本地日期（bedtime 日期），避免跨午夜睡眠被劈成两半分到两天。例如 22:00 入睡 07:00 醒来的睡眠，整个 session 归到 22:00 那天。
+- **修复 `compute_day_metrics` 中 bedtime/wake_time 的跨午夜 bug**：bedtime 只从 start_hour >= 16 的 sample 取（傍晚/晚上），wake_time 只从 start_hour <= 12 的 sample 取（清晨/上午），避免午夜后的 sample 用 `time() < time()` 比较覆盖 evening bedtime。凌晨入睡的场景 fallback 到 session 最早 start_at。
+- **新增 `sleep daily --last-night` CLI flag**：自动映射到昨天的日期（因为跨午夜睡眠归到 bedtime 日期）。`--date` 不再 required，不传默认今天。
+- 新增 2 个测试（`test_assign_samples_to_days_cross_midnight`、`test_assign_samples_to_days_after_midnight_session`），更新 1 个 fixture（`test_compute_analysis_summary`），总测试数 93。
+- 更新 skill 文件：睡眠日期归属规则、`--last-night` 用法、bedtime/wake_time 计算逻辑说明。
+
 ### 2026-03-31 (Sleep nap separation, absolute DB path)
 
 ### 2026-03-31 (Workout tracking, continuous heart rate, active energy)

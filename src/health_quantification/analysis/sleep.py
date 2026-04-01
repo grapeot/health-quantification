@@ -148,12 +148,19 @@ def compute_day_metrics(
 
         stage = str(sample["stage"])
         if stage in ASLEEP_STAGES or stage == "in_bed":
-            hour = start_local.hour
-            if 16 <= hour or hour <= 12:
+            start_hour = start_local.hour
+            if start_hour >= 16:
                 if bedtime is None or start_local.time() < bedtime.time():
                     bedtime = start_local
+            if start_hour <= 12:
                 if end_local and (wake_time is None or end_local.time() > wake_time.time()):
                     wake_time = end_local
+
+    if bedtime is None and main_session:
+        earliest = min(
+            _to_local(str(s["start_at"]), tz) for s in main_session
+        )
+        bedtime = earliest
 
     efficiency = (total_sleep / total_in_bed * 100) if total_in_bed > 0 else None
 
@@ -200,15 +207,17 @@ def assign_samples_to_days(
     tz_name: str,
 ) -> dict[str, list[dict[str, object]]]:
     tz = _tz(tz_name)
+    sessions = _split_into_sessions(samples, tz)
     days: dict[str, list[dict[str, object]]] = {}
-    for s in samples:
-        end_str = s.get("end_at")
-        if end_str:
-            local = _to_local(str(end_str), tz)
-        else:
-            local = _to_local(str(s["start_at"]), tz)
-        date_str = local.date().isoformat()
-        days.setdefault(date_str, []).append(s)
+    for session in sessions:
+        # Assign the entire session to the local date of its earliest start_at.
+        # This keeps cross-midnight sleep sessions intact on one day
+        # (the day the user went to bed), instead of splitting them at midnight.
+        earliest_start = min(
+            _to_local(str(s["start_at"]), tz) for s in session
+        )
+        date_str = earliest_start.date().isoformat()
+        days.setdefault(date_str, []).extend(session)
     return days
 
 

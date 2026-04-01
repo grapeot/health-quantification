@@ -64,6 +64,7 @@ python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json|text
 python -m health_quantification.cli sleep daily --date YYYY-MM-DD --format json|text
+python -m health_quantification.cli sleep daily --last-night --format json|text
 python -m health_quantification.cli vitals analyze --days 30 --metric resting_heart_rate --format json|text
 python -m health_quantification.cli vitals daily --date YYYY-MM-DD --format json|text
 python -m health_quantification.cli body analyze --days 30 --metric body_mass --format json|text
@@ -173,13 +174,56 @@ AI 完全控制分析过程。典型工作流：
 - **所有 HealthKit 时间戳都是 UTC**。SQLite 里存的也是 UTC。
 - **CLI 分析层（metrics.py、sleep.py）已经做了本地时区转换**：`_to_local_date()` 将 UTC 时间戳转为本地日期。vitals、activity、workouts、lifestyle、body 的 `analyze/daily` 都是正确的。
 - **直接查数据库时不要用 UTC 日期判断"今天"**。例如 UTC 3/31 01:48 在 PT 是 3/30 18:48（昨天），直接 SQL 查 `date(start_at) = '2026-03-31'` 会把昨天的数据也拉出来。做分析时应该用 CLI 而不是直接查 DB。
-- **sleep 用 `end_at` 的本地日期归属**，其他类型用 `end_at > start_at > recorded_at` 优先级取时间戳再转本地日期。
+
+### 睡眠日期归属与"昨晚睡得怎么样"
+
+**这是最容易出错的地方。** sleep 的日期归属用 session 的 bedtime 日期（session 中最早 `start_at` 的本地日期），不是 `end_at` 的本地日期。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 22:00 那天的日期上。
+
+当用户说"昨晚睡得怎么样"或"昨天睡得怎么样"时：
+- **用 `sleep daily --last-night`**（推荐）— 自动映射到昨天的日期
+- **用 `sleep daily --date YYYY-MM-DD`** — 传入 bedtime 所在的那天（通常就是"昨天"）
+- **不要**传入今天日期来查"昨晚"的睡眠，因为昨晚的跨午夜睡眠归到昨天
+- **不要**直接用 SQL 查 `date(end_at)` 来做日期归属，因为会把跨午夜睡眠劈成两半
+
+CLI 合同：
+```bash
+# 查昨晚的睡眠（推荐）
+python -m health_quantification.cli sleep daily --last-night --format json
+
+# 查某天的睡眠
+python -m health_quantification.cli sleep daily --date 2026-03-31 --format json
+
+# --date 和 --format 都是可选的，不传 --date 默认今天（注意：今天通常没有完整的夜间睡眠数据）
+python -m health_quantification.cli sleep daily --format json
+```
 
 ### 睡眠分析
 
 - **主睡眠与午睡已通过 session segmentation 分离**：同一天的 samples 按时间 gap（>2h）拆分为多个 session，asleep 时间最长的为主睡眠，其余为午睡。
 - `total_sleep_hours` = 主睡眠 + 午睡。bedtime/wake_time/stage_hours 只从主睡眠计算。
+- **bedtime/wake_time 的计算**：bedtime 只从 start_hour >= 16 的 sample 中取（傍晚/晚上），wake_time 只从 start_hour <= 12 的 sample 中取（清晨/上午）。如果 session 没有 evening sample（凌晨入睡），bedtime fallback 到 session 最早的 start_at。
 - 纯午睡日（没有过夜睡眠）`has_nap=True` 但 `nap_hours=0.0`（因为唯一 session 就是 main session）。
+
+### 睡眠窗口与 Vitals 交叉分析（重要踩坑！）
+
+**绝对不要用 `GROUP BY date(start_at, '-7 hours')` 来生成 sleep window。** 这种写法会把跨午夜的两晚合并成一个 24 小时的巨大窗口（比如 3/27 07:06 到 3/28 07:12），导致白天清醒时间的 vital 被错误地标记为"sleep"。
+
+正确做法是使用 session splitting 逻辑（和 `sleep.py` 的 `_split_into_sessions` 一致）：
+
+1. 从 `sleep_samples` 取所有样本，按 `start_at` 排序
+2. 相邻样本 gap > 2 小时则拆分为新 session
+3. 过滤掉过短（<3h）和过长（>12h）的 session
+4. 每个 session 的 `(min(start_at), max(end_at))` 才是真正的睡眠窗口
+
+**反例（错误）**：
+```sql
+-- ❌ 会产生 24h 巨大窗口，sleep/awake 分类完全错乱
+SELECT MIN(start_at), MAX(end_at)
+FROM sleep_samples
+GROUP BY date(start_at, '-7 hours')
+```
+
+**正例（正确）**：在 Python 中做 session splitting，过滤后用 timestamp range 做 `is_sleep()` 判断。直接写 SQL 无法可靠实现 session splitting。
 
 ### 配置与部署
 

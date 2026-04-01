@@ -5,6 +5,7 @@ import json
 import sys
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from health_quantification.analysis.metrics import (
     compute_metric_analysis,
@@ -120,7 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     sleep_analyze.add_argument("--format", choices=["json", "text"], default="json")
 
     sleep_daily = sleep_sub.add_parser("daily")
-    sleep_daily.add_argument("--date", required=True)
+    sleep_daily.add_argument("--date")
+    sleep_daily.add_argument("--last-night", action="store_true", default=False)
     sleep_daily.add_argument("--format", choices=["json", "text"], default="json")
 
     for command_name in ("vitals", "body", "lifestyle", "activity"):
@@ -288,8 +290,16 @@ def main(argv: list[str] | None = None) -> int:
         samples = query_sleep_samples(db_path=settings.db_path)
         days_map = assign_samples_to_days(samples, settings.timezone)
         _check_data_freshness(days_map, settings.timezone)
-        day_samples = days_map.get(args.date, [])
-        metrics = compute_day_metrics(day_samples, args.date, settings.timezone)
+
+        if args.last_night:
+            target_date = (datetime.now(ZoneInfo(settings.timezone)) - timedelta(days=1)).date().isoformat()
+        elif args.date:
+            target_date = args.date
+        else:
+            target_date = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
+
+        day_samples = days_map.get(target_date, [])
+        metrics = compute_day_metrics(day_samples, target_date, settings.timezone)
         if args.format == "json":
             print(json.dumps(metrics.to_dict(), indent=2))
         else:
