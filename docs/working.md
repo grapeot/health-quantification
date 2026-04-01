@@ -6,7 +6,7 @@
 
 - 修复 config.py 使用相对路径 `data/health_quantification.db` 的隐患：改为基于 `__file__` 解析项目根目录的绝对路径，CLI 从任何 cwd 运行都指向同一个 DB。
 - 修复睡眠分析中主睡眠与午睡混算的 bug：`compute_day_metrics` 现在先将同一天的 samples 按时间 gap（>2h）拆分为多个 session，取 asleep 时间最长的作为主睡眠，其余归为午睡。
-- `DaySleepMetrics` 新增 `nap_hours` 字段，bedtime/wake_time/total_sleep_hours/stage_hours 只从主睡眠计算。
+- `DaySleepMetrics` 新增 `nap_hours` 字段，bedtime/wake_time/stage_hours 只从主睡眠计算，`total_sleep_hours` 包含主睡眠+午睡。
 - 新增 `_split_into_sessions()` 和 `_session_stage_hours()` / `_session_asleep_hours()` 辅助函数。
 - 新增 5 个测试（主睡眠+午睡、带 stage 的午睡、多次午睡、纯午睡日、短暂间隔不误判为午睡），总测试数 81。
 - pm2 后端已重启，PR #1 已 merge（absolute DB path fix）。

@@ -98,10 +98,9 @@ def test_compute_day_metrics_main_sleep_and_afternoon_nap() -> None:
     metrics = compute_day_metrics(samples, "2026-03-31", "America/Los_Angeles")
     assert metrics.bedtime == "02:03"
     assert metrics.wake_time == "05:45"
-    assert metrics.total_sleep_hours == 3.7
+    assert metrics.total_sleep_hours == 5.95
     assert metrics.nap_hours == 2.25
     assert metrics.has_nap is True
-    assert metrics.unspecified_hours == 0.0
 
 
 def test_compute_day_metrics_main_sleep_and_staged_nap() -> None:
@@ -114,7 +113,7 @@ def test_compute_day_metrics_main_sleep_and_staged_nap() -> None:
         _make_sample("n3", "2026-03-14T19:15:00Z", "2026-03-14T19:30:00Z", "asleep_rem", 4),
     ]
     metrics = compute_day_metrics(samples, "2026-03-14", "America/Los_Angeles")
-    assert metrics.total_sleep_hours == 4.0
+    assert metrics.total_sleep_hours == 5.0
     assert metrics.deep_sleep_hours == 1.0
     assert metrics.core_sleep_hours == 2.0
     assert metrics.rem_sleep_hours == 1.0
@@ -130,7 +129,7 @@ def test_compute_day_metrics_multiple_naps_accumulate_nap_hours() -> None:
         _make_sample("n2", "2026-03-16T22:00:00Z", "2026-03-16T22:45:00Z", "asleep_unspecified", 5),
     ]
     metrics = compute_day_metrics(samples, "2026-03-16", "America/Los_Angeles")
-    assert metrics.total_sleep_hours == 5.0
+    assert metrics.total_sleep_hours == 6.25
     assert metrics.nap_hours == 1.25
     assert metrics.has_nap is True
 

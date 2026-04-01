@@ -130,12 +130,15 @@ def compute_day_metrics(
 
     main_session = sessions[main_session_index] if sessions else []
     main_stage_hours = _session_stage_hours(main_session)
-    total_sleep = session_sleep_hours[main_session_index] if session_sleep_hours else 0.0
+    main_sleep = session_sleep_hours[main_session_index] if session_sleep_hours else 0.0
     nap_hours = sum(hours for index, hours in enumerate(session_sleep_hours) if index != main_session_index)
+    total_sleep = main_sleep + nap_hours
+
+    for session in sessions:
+        for sample in session:
+            total_in_bed += _stage_duration_hours(sample)
 
     for sample in main_session:
-        stage = str(sample["stage"])
-        dur = _stage_duration_hours(sample)
         start_local = _to_local(str(sample["start_at"]), tz)
         end_str = sample.get("end_at")
         end_local = _to_local(str(end_str), tz) if end_str else None
@@ -143,8 +146,7 @@ def compute_day_metrics(
         if end_local and end_local.date() < start_local.date():
             has_overnight = True
 
-        total_in_bed += dur
-
+        stage = str(sample["stage"])
         if stage in ASLEEP_STAGES or stage == "in_bed":
             hour = start_local.hour
             if 16 <= hour or hour <= 12:
