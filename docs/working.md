@@ -2,6 +2,15 @@
 
 ## Changelog
 
+### 2026-03-31 (Sleep nap separation, absolute DB path)
+
+- 修复 config.py 使用相对路径 `data/health_quantification.db` 的隐患：改为基于 `__file__` 解析项目根目录的绝对路径，CLI 从任何 cwd 运行都指向同一个 DB。
+- 修复睡眠分析中主睡眠与午睡混算的 bug：`compute_day_metrics` 现在先将同一天的 samples 按时间 gap（>2h）拆分为多个 session，取 asleep 时间最长的作为主睡眠，其余归为午睡。
+- `DaySleepMetrics` 新增 `nap_hours` 字段，bedtime/wake_time/total_sleep_hours/stage_hours 只从主睡眠计算。
+- 新增 `_split_into_sessions()` 和 `_session_stage_hours()` / `_session_asleep_hours()` 辅助函数。
+- 新增 5 个测试（主睡眠+午睡、带 stage 的午睡、多次午睡、纯午睡日、短暂间隔不误判为午睡），总测试数 81。
+- pm2 后端已重启，PR #1 已 merge（absolute DB path fix）。
+
 ### 2026-03-31 (Phase 3: DB as primary storage, multi-source, AI recording)
 
 - 架构转变：SQLite 从 HealthKit 镜像升级为唯一事实来源（single source of truth）
@@ -118,7 +127,7 @@
 - 新增 analysis/sleep.py：per-day 和 multi-day 睡眠指标计算（total sleep、deep/core/REM 分解、efficiency、nap 检测）。使用 end-time UTC→PDT 分配处理跨午夜睡眠。
 - CLI 新增 `sleep analyze --days N` 和 `sleep daily --date` 子命令，支持 json/text 输出。19 pytest 通过。
 - 跨午夜睡眠分配：使用 sample 的 end_at（而非 start_at）来确定归属日期，避免夜间睡眠被拆分到两天。nap 检测使用 has_overnight + total_sleep < 3h 双条件。
-- bedtime/wake_time 计算存在已知限制：cross-midnight split 导致某些天的 wake_time 不准确，需要 session segmentation 来精确识别主睡眠窗口。
+- bedtime/wake_time 计算：已通过 session segmentation 修复。同一天的 samples 按时间 gap（>2h）拆分为多个 session，主睡眠用于 bedtime/wake_time，午睡单独报告。
 - 替换 SVG daily card 为 MD 报告系统。报告输出到 `docs/reports/`（.gitignore 排除），图表输出到 `docs/assets/`（SVG）。CLI 新增 `report daily` 和 `report analyze` 子命令，AI 自由决定文件名。
 - Skill 通过 symlink 注册到 `rules/skills/health_quantification.md`，从 workspace 根目录也可通过自然语言调用。
 

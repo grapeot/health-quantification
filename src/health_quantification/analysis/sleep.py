@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from zoneinfo import ZoneInfo
 
@@ -21,7 +21,8 @@ class DaySleepMetrics:
     awake_hours: float
     unspecified_hours: float
     sample_count: int
-    has_nap: bool
+    nap_hours: float = 0.0
+    has_nap: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -68,35 +69,81 @@ def _stage_duration_hours(sample: dict[str, object]) -> float:
     return max(0.0, delta.total_seconds() / 3600)
 
 
+def _split_into_sessions(
+    samples: list[dict[str, object]],
+    tz: ZoneInfo,
+    gap_threshold_hours: float = 2.0,
+) -> list[list[dict[str, object]]]:
+    if not samples:
+        return []
+
+    sorted_samples = sorted(samples, key=lambda sample: _to_local(str(sample["start_at"]), tz))
+    sessions: list[list[dict[str, object]]] = []
+    current_session: list[dict[str, object]] = [sorted_samples[0]]
+    previous_end = _to_local(str(sorted_samples[0].get("end_at") or sorted_samples[0]["start_at"]), tz)
+
+    for sample in sorted_samples[1:]:
+        start_local = _to_local(str(sample["start_at"]), tz)
+        gap_hours = (start_local - previous_end).total_seconds() / 3600
+        if gap_hours > gap_threshold_hours:
+            sessions.append(current_session)
+            current_session = [sample]
+        else:
+            current_session.append(sample)
+
+        previous_end = _to_local(str(sample.get("end_at") or sample["start_at"]), tz)
+
+    sessions.append(current_session)
+    return sessions
+
+
+def _session_stage_hours(samples: list[dict[str, object]]) -> dict[str, float]:
+    stage_hours: dict[str, float] = {}
+    for sample in samples:
+        stage = str(sample["stage"])
+        stage_hours[stage] = stage_hours.get(stage, 0.0) + _stage_duration_hours(sample)
+    return stage_hours
+
+
+def _session_asleep_hours(samples: list[dict[str, object]]) -> float:
+    stage_hours = _session_stage_hours(samples)
+    return sum(hours for stage, hours in stage_hours.items() if stage in ASLEEP_STAGES)
+
+
 def compute_day_metrics(
     samples: list[dict[str, object]],
     date_str: str,
     tz_name: str,
 ) -> DaySleepMetrics:
     tz = _tz(tz_name)
-    stage_hours: dict[str, float] = {}
     bedtime: datetime | None = None
     wake_time: datetime | None = None
-    total_sleep = 0.0
     total_in_bed = 0.0
     sample_count = len(samples)
     has_overnight = False
+    sessions = _split_into_sessions(samples, tz)
+    session_sleep_hours = [_session_asleep_hours(session) for session in sessions]
 
-    for s in samples:
-        stage = str(s["stage"])
-        dur = _stage_duration_hours(s)
-        stage_hours[stage] = stage_hours.get(stage, 0.0) + dur
+    main_session_index = 0
+    if session_sleep_hours:
+        main_session_index = max(range(len(sessions)), key=lambda index: session_sleep_hours[index])
 
-        start_local = _to_local(str(s["start_at"]), tz)
-        end_str = s.get("end_at")
+    main_session = sessions[main_session_index] if sessions else []
+    main_stage_hours = _session_stage_hours(main_session)
+    total_sleep = session_sleep_hours[main_session_index] if session_sleep_hours else 0.0
+    nap_hours = sum(hours for index, hours in enumerate(session_sleep_hours) if index != main_session_index)
+
+    for sample in main_session:
+        stage = str(sample["stage"])
+        dur = _stage_duration_hours(sample)
+        start_local = _to_local(str(sample["start_at"]), tz)
+        end_str = sample.get("end_at")
         end_local = _to_local(str(end_str), tz) if end_str else None
 
         if end_local and end_local.date() < start_local.date():
             has_overnight = True
 
         total_in_bed += dur
-        if stage in ASLEEP_STAGES:
-            total_sleep += dur
 
         if stage in ASLEEP_STAGES or stage == "in_bed":
             hour = start_local.hour
@@ -108,17 +155,23 @@ def compute_day_metrics(
 
     efficiency = (total_sleep / total_in_bed * 100) if total_in_bed > 0 else None
 
-    deep = stage_hours.get("asleep_deep", 0.0)
-    core = stage_hours.get("asleep_core", 0.0)
-    rem = stage_hours.get("asleep_rem", 0.0)
-    awake = stage_hours.get("awake", 0.0)
-    unspecified = stage_hours.get("asleep_unspecified", 0.0)
+    deep = main_stage_hours.get("asleep_deep", 0.0)
+    core = main_stage_hours.get("asleep_core", 0.0)
+    rem = main_stage_hours.get("asleep_rem", 0.0)
+    awake = main_stage_hours.get("awake", 0.0)
+    unspecified = main_stage_hours.get("asleep_unspecified", 0.0)
 
     is_nap = (
         sample_count > 0
         and total_sleep > 0.3
-        and not has_overnight
-        and total_sleep < 3.0
+        and (
+            nap_hours > 0
+            or (
+                len(sessions) == 1
+                and not has_overnight
+                and total_sleep < 3.0
+            )
+        )
     )
 
     return DaySleepMetrics(
@@ -135,6 +188,7 @@ def compute_day_metrics(
         awake_hours=round(awake, 2),
         unspecified_hours=round(unspecified, 2),
         sample_count=sample_count,
+        nap_hours=round(nap_hours, 2),
         has_nap=is_nap,
     )
 
@@ -184,7 +238,7 @@ def compute_analysis(
                 sleep_efficiency=None,
                 deep_sleep_hours=0.0, core_sleep_hours=0.0,
                 rem_sleep_hours=0.0, awake_hours=0.0,
-                unspecified_hours=0.0, sample_count=0, has_nap=False,
+                unspecified_hours=0.0, sample_count=0, nap_hours=0.0, has_nap=False,
             ))
             continue
 
@@ -208,8 +262,12 @@ def compute_analysis(
     avg_core = round(sum(core_list) / len(core_list), 2) if core_list else 0.0
     avg_rem = round(sum(rem_list) / len(rem_list), 2) if rem_list else 0.0
 
-    bedtimes: list[str] = [m.bedtime for m in daily_metrics if m.bedtime and m.total_sleep_hours >= 3.0]
-    wake_times: list[str] = [m.wake_time for m in daily_metrics if m.wake_time and m.total_sleep_hours >= 3.0]
+    bedtimes: list[str] = [
+        m.bedtime for m in daily_metrics if m.bedtime and not m.has_nap and m.total_sleep_hours >= 3.0
+    ]
+    wake_times: list[str] = [
+        m.wake_time for m in daily_metrics if m.wake_time and not m.has_nap and m.total_sleep_hours >= 3.0
+    ]
 
     avg_bedtime = _avg_time(bedtimes) if bedtimes else None
     avg_wake = _avg_time(wake_times) if wake_times else None
