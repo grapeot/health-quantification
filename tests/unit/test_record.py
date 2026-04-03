@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from health_quantification.storage import initialize_database, record_sample
+from health_quantification.storage import (
+    initialize_database,
+    query_illness_episodes,
+    record_illness_episode,
+    record_sample,
+)
 
 
 def fetch_one(db_path, query: str) -> sqlite3.Row:
@@ -200,3 +205,79 @@ def test_record_sample_rejects_unknown_data_type(tmp_path) -> None:
                 "metadata": {},
             },
         )
+
+
+def test_record_illness_episode_routes_to_illness_episodes(tmp_path) -> None:
+    db_path = tmp_path / "record_illness.db"
+    initialize_database(db_path)
+
+    result = record_illness_episode(
+        db_path,
+        {
+            "source": "manual_test",
+            "source_id": "illness-1",
+            "label": "flu_like",
+            "severity": "moderate",
+            "status": "active",
+            "start_at": "2026-04-01T03:00:00Z",
+            "notes": [
+                "Started feeling congested the night before last",
+                "Today slightly better but still sick",
+            ],
+            "metadata": {
+                "symptoms": ["nasal_congestion"],
+                "progression": ["yesterday worse", "today slightly improved"],
+            },
+        },
+    )
+
+    row = fetch_one(db_path, "SELECT * FROM illness_episodes")
+    assert row["source"] == "manual_test"
+    assert row["source_id"] == "illness-1"
+    assert row["label"] == "flu_like"
+    assert row["severity"] == "moderate"
+    assert row["status"] == "active"
+    assert row["start_at"] == "2026-04-01T03:00:00Z"
+    assert row["end_at"] is None
+    assert json.loads(row["notes_json"]) == [
+        "Started feeling congested the night before last",
+        "Today slightly better but still sick",
+    ]
+    assert json.loads(row["metadata_json"]) == {
+        "symptoms": ["nasal_congestion"],
+        "progression": ["yesterday worse", "today slightly improved"],
+    }
+    assert result == {
+        "status": "recorded",
+        "data_type": "illness",
+        "source_id": "illness-1",
+        "label": "flu_like",
+        "severity": "moderate",
+        "episode_status": "active",
+        "start_at": "2026-04-01T03:00:00Z",
+        "end_at": None,
+    }
+
+
+def test_query_illness_episodes_decodes_json_fields(tmp_path) -> None:
+    db_path = tmp_path / "query_illness.db"
+    initialize_database(db_path)
+
+    record_illness_episode(
+        db_path,
+        {
+            "source_id": "illness-query-1",
+            "label": "cold",
+            "severity": "mild",
+            "status": "resolved",
+            "start_at": "2026-04-01T03:00:00Z",
+            "end_at": "2026-04-02T18:00:00Z",
+            "notes_json": json.dumps(["Recovered after one day"]),
+            "metadata_json": json.dumps({"symptoms": ["congestion"]}),
+        },
+    )
+
+    episodes = query_illness_episodes(db_path, status="resolved")
+    assert len(episodes) == 1
+    assert episodes[0]["notes"] == ["Recovered after one day"]
+    assert episodes[0]["metadata"] == {"symptoms": ["congestion"]}

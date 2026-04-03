@@ -163,6 +163,26 @@ def create_workouts_table() -> str:
     """
 
 
+def create_illness_episodes_table() -> str:
+    return """
+    CREATE TABLE IF NOT EXISTS illness_episodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT,
+        notes_json TEXT NOT NULL DEFAULT '[]',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(source, source_id)
+    )
+    """
+
+
 SCHEMA_STATEMENTS = [
     create_observations_table(),
     create_daily_summaries_table(),
@@ -172,6 +192,7 @@ SCHEMA_STATEMENTS = [
     create_lifestyle_table(),
     create_activity_table(),
     create_workouts_table(),
+    create_illness_episodes_table(),
 ]
 
 
@@ -189,6 +210,13 @@ def initialize_database(db_path: Path) -> None:
 
 def _metadata_json(sample: dict[str, object]) -> str:
     return json.dumps(sample.get("metadata", {}))
+
+
+def _notes_json(sample: dict[str, object]) -> str:
+    notes = sample.get("notes", [])
+    if isinstance(notes, list):
+        return json.dumps(notes)
+    return json.dumps([notes])
 
 
 def _upsert_samples(
@@ -437,6 +465,49 @@ def upsert_workout_samples(db_path: Path, samples: list[dict[str, object]]) -> i
     )
 
 
+def upsert_illness_episodes(db_path: Path, samples: list[dict[str, object]]) -> int:
+    prepared_samples = [
+        {
+            "source": sample["source"],
+            "source_id": sample["source_id"],
+            "label": sample["label"],
+            "severity": sample["severity"],
+            "status": sample["status"],
+            "start_at": sample["start_at"],
+            "end_at": sample.get("end_at"),
+            "notes_json": _notes_json(sample),
+            "metadata_json": _metadata_json(sample),
+        }
+        for sample in samples
+    ]
+    return _upsert_samples(
+        db_path,
+        table_name="illness_episodes",
+        insert_columns=(
+            "source",
+            "source_id",
+            "label",
+            "severity",
+            "status",
+            "start_at",
+            "end_at",
+            "notes_json",
+            "metadata_json",
+        ),
+        update_columns=(
+            "label",
+            "severity",
+            "status",
+            "start_at",
+            "end_at",
+            "notes_json",
+            "metadata_json",
+        ),
+        conflict_columns=("source", "source_id"),
+        samples=prepared_samples,
+    )
+
+
 def record_sample(
     db_path: Path, data_type: str, sample: dict[str, object]
 ) -> dict[str, object]:
@@ -499,6 +570,52 @@ def record_sample(
         "data_type": data_type,
         "metric_type": metric_type,
         "value": value,
+    }
+
+
+def record_illness_episode(db_path: Path, sample: dict[str, object]) -> dict[str, object]:
+    normalized_sample = dict(sample)
+    metadata = normalized_sample.get("metadata")
+    metadata_json = normalized_sample.get("metadata_json")
+    if metadata is None and metadata_json is not None:
+        if isinstance(metadata_json, str):
+            normalized_sample["metadata"] = json.loads(metadata_json)
+        else:
+            normalized_sample["metadata"] = metadata_json
+
+    notes = normalized_sample.get("notes")
+    notes_json = normalized_sample.get("notes_json")
+    if notes is None and notes_json is not None:
+        if isinstance(notes_json, str):
+            normalized_sample["notes"] = json.loads(notes_json)
+        else:
+            normalized_sample["notes"] = notes_json
+
+    source_id = str(normalized_sample.get("source_id") or str(uuid.uuid4()))
+    source = str(normalized_sample.get("source") or "ai_manual")
+    current_time = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    status = str(normalized_sample.get("status") or "active")
+    normalized_sample["source_id"] = source_id
+    normalized_sample["source"] = source
+    normalized_sample["status"] = status
+    normalized_sample["start_at"] = str(normalized_sample.get("start_at") or current_time)
+    normalized_sample["severity"] = str(normalized_sample.get("severity") or "unknown")
+    normalized_sample["label"] = str(normalized_sample["label"])
+    if normalized_sample.get("end_at") is not None:
+        normalized_sample["end_at"] = str(normalized_sample["end_at"])
+    if normalized_sample.get("notes") is None:
+        normalized_sample["notes"] = []
+
+    upsert_illness_episodes(db_path, [normalized_sample])
+    return {
+        "status": "recorded",
+        "data_type": "illness",
+        "source_id": source_id,
+        "label": normalized_sample["label"],
+        "severity": normalized_sample["severity"],
+        "episode_status": status,
+        "start_at": normalized_sample["start_at"],
+        "end_at": normalized_sample.get("end_at"),
     }
 
 
@@ -639,6 +756,47 @@ def query_workout_samples(
         to_date=to_date,
         source=source,
     )
+
+
+def query_illness_episodes(
+    db_path: Path,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    source: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, object]]:
+    clauses: list[str] = []
+    params: list[object] = []
+    if from_date:
+        clauses.append("start_at >= ?")
+        params.append(from_date)
+    if to_date:
+        clauses.append("start_at <= ?")
+        params.append(to_date)
+    if source:
+        clauses.append("source = ?")
+        params.append(source)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT * FROM illness_episodes{where} ORDER BY start_at DESC",
+            params,
+        ).fetchall()
+
+    episodes: list[dict[str, object]] = []
+    for row in rows:
+        episode = dict(cast(sqlite3.Row, row))
+        notes_json = episode.get("notes_json")
+        metadata_json = episode.get("metadata_json")
+        episode["notes"] = json.loads(notes_json) if isinstance(notes_json, str) else []
+        episode["metadata"] = json.loads(metadata_json) if isinstance(metadata_json, str) else {}
+        episodes.append(episode)
+    return episodes
 
 
 def _delete_samples(db_path: Path, *, table_name: str, source: str | None = None) -> int:

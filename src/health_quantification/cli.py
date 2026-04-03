@@ -12,6 +12,7 @@ from health_quantification.analysis.metrics import (
     compute_metric_daily_summary,
 )
 from health_quantification.analysis.sleep import (
+    DaySleepMetrics,
     assign_samples_to_days,
     compute_analysis,
     compute_day_metrics,
@@ -20,12 +21,14 @@ from health_quantification.config import load_settings
 from health_quantification.models import MetricAnalysisSummary, MetricDailySummary
 from health_quantification.storage import (
     initialize_database,
+    query_illness_episodes,
     query_activity_samples,
     query_body_samples,
     query_lifestyle_samples,
     query_sleep_samples,
     query_vitals_samples,
     query_workout_samples,
+    record_illness_episode,
     record_sample,
 )
 
@@ -84,6 +87,30 @@ def _workout_samples_as_metric_rows(samples: list[dict[str, object]]) -> list[di
     return metric_rows
 
 
+def _print_illness_text(episodes: list[dict[str, object]]) -> None:
+    if not episodes:
+        print("No illness episodes found.")
+        return
+
+    for episode in episodes:
+        print(
+            (
+                f"[{episode['status']}] {episode['start_at']} -> {episode.get('end_at') or 'ongoing'} "
+                f"label={episode['label']} severity={episode['severity']} source={episode['source']}"
+            )
+        )
+        notes_value = episode.get("notes")
+        notes = notes_value if isinstance(notes_value, list) else []
+        for note in notes:
+            print(f"  - {note}")
+        metadata_value = episode.get("metadata")
+        metadata = metadata_value if isinstance(metadata_value, dict) else {}
+        symptoms_value = metadata.get("symptoms")
+        symptoms = symptoms_value if isinstance(symptoms_value, list) else []
+        if symptoms:
+            print(f"  symptoms: {', '.join(str(symptom) for symptom in symptoms)}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="health_quant")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -106,6 +133,30 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--time")
     record.add_argument("--source")
     record.add_argument("--note")
+
+    illness = subparsers.add_parser("illness")
+    illness_sub = illness.add_subparsers(dest="illness_command", required=True)
+
+    illness_record = illness_sub.add_parser("record")
+    illness_record.add_argument("--label", required=True)
+    illness_record.add_argument(
+        "--severity", choices=["mild", "moderate", "severe", "unknown"], default="unknown"
+    )
+    illness_record.add_argument("--status", choices=["active", "resolved"], default="active")
+    illness_record.add_argument("--start-time", required=True)
+    illness_record.add_argument("--end-time")
+    illness_record.add_argument("--source")
+    illness_record.add_argument("--source-id")
+    illness_record.add_argument("--note", action="append", default=[])
+    illness_record.add_argument("--symptom", action="append", default=[])
+    illness_record.add_argument("--progression", action="append", default=[])
+
+    illness_list = illness_sub.add_parser("list")
+    illness_list.add_argument("--from-date")
+    illness_list.add_argument("--to-date")
+    illness_list.add_argument("--source")
+    illness_list.add_argument("--status", choices=["active", "resolved", "all"], default="all")
+    illness_list.add_argument("--format", choices=["json", "text"], default="json")
 
     summary = subparsers.add_parser("summary")
     summary_sub = summary.add_subparsers(dest="summary_command", required=True)
@@ -164,6 +215,22 @@ def _print_metric_daily_text(summary: MetricDailySummary) -> None:
         )
     if not summary.metrics:
         print("  no data")
+
+
+def _print_sleep_sessions(metrics: DaySleepMetrics) -> None:
+    sessions = metrics.sessions or []
+    if not sessions:
+        return
+
+    print("Sessions:")
+    for session in sessions:
+        print(
+            f"  [{session.session_type}] {session.start_local} -> {session.end_local} "
+            f"sleep={session.sleep_hours}h in_bed={session.in_bed_hours}h "
+            f"deep={session.deep_sleep_hours}h core={session.core_sleep_hours}h "
+            f"rem={session.rem_sleep_hours}h awake={session.awake_hours}h "
+            f"unspecified={session.unspecified_hours}h"
+        )
 
 
 def _run_metric_command(
@@ -247,6 +314,46 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
 
+    if args.command == "illness" and args.illness_command == "record":
+        initialize_database(settings.db_path)
+        metadata: dict[str, object] = {}
+        if args.symptom:
+            metadata["symptoms"] = args.symptom
+        if args.progression:
+            metadata["progression"] = args.progression
+        result = record_illness_episode(
+            settings.db_path,
+            {
+                "source": args.source,
+                "source_id": args.source_id,
+                "label": args.label,
+                "severity": args.severity,
+                "status": args.status,
+                "start_at": args.start_time,
+                "end_at": args.end_time,
+                "notes": args.note,
+                "metadata": metadata,
+            },
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "illness" and args.illness_command == "list":
+        initialize_database(settings.db_path)
+        query_status = None if args.status == "all" else args.status
+        episodes = query_illness_episodes(
+            settings.db_path,
+            from_date=args.from_date,
+            to_date=args.to_date,
+            source=args.source,
+            status=query_status,
+        )
+        if args.format == "json":
+            print(json.dumps({"episodes": episodes, "count": len(episodes)}, indent=2, sort_keys=True))
+        else:
+            _print_illness_text(episodes)
+        return 0
+
     if args.command == "summary" and args.summary_command == "daily":
         from health_quantification.analysis.daily_summary import build_default_daily_summary
 
@@ -272,18 +379,28 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Avg sleep: {analysis.avg_sleep_hours}h | Deep: {analysis.avg_deep_hours}h | Core: {analysis.avg_core_hours}h | REM: {analysis.avg_rem_hours}h"
             )
+            print(f"Avg lead-in sleep: {analysis.avg_lead_in_sleep_hours}h")
             if analysis.avg_bedtime:
                 print(f"Avg bedtime: {analysis.avg_bedtime} | Avg wake: {analysis.avg_wake_time}")
             if analysis.avg_efficiency:
                 print(f"Avg efficiency: {analysis.avg_efficiency}%")
             for day in analysis.daily:
                 if day.sample_count > 0:
-                    marker = " (nap)" if day.has_nap else ""
                     print(
-                        f"  {day.date}: {day.total_sleep_hours}h sleep, {day.deep_sleep_hours}h deep, {day.rem_sleep_hours}h REM{marker}"
+                        f"  {day.date}: total={day.total_sleep_hours}h main={day.main_sleep_hours}h nap={day.nap_hours}h additional={day.additional_sleep_hours}h"
                     )
                 else:
                     print(f"  {day.date}: no data")
+            print("Functional days:")
+            for day in analysis.functional_daily:
+                if day.lead_in_sleep is not None:
+                    print(
+                        f"  {day.date}: lead-in={day.lead_in_sleep.sleep_hours}h "
+                        f"({day.lead_in_sleep.start_local} -> {day.lead_in_sleep.end_local}) "
+                        f"source_session={day.lead_in_sleep.session_type}"
+                    )
+                else:
+                    print(f"  {day.date}: no lead-in sleep")
         return 0
 
     if args.command == "sleep" and args.sleep_command == "daily":
@@ -304,7 +421,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(metrics.to_dict(), indent=2))
         else:
             print(f"Date: {metrics.date} | Samples: {metrics.sample_count}")
-            print(f"Sleep: {metrics.total_sleep_hours}h | In bed: {metrics.total_in_bed_hours}h")
+            print(
+                f"Sleep: total={metrics.total_sleep_hours}h | main={metrics.main_sleep_hours}h | "
+                f"nap={metrics.nap_hours}h | additional={metrics.additional_sleep_hours}h | "
+                f"in_bed={metrics.total_in_bed_hours}h"
+            )
             if metrics.bedtime:
                 print(f"Bedtime: {metrics.bedtime} | Wake: {metrics.wake_time}")
             print(
@@ -312,8 +433,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             if metrics.sleep_efficiency:
                 print(f"Efficiency: {metrics.sleep_efficiency}%")
-            if metrics.has_nap:
-                print("(nap)")
+            if metrics.lead_in_sleep is not None:
+                print(
+                    f"Lead-in sleep for {metrics.date}: {metrics.lead_in_sleep.sleep_hours}h "
+                    f"({metrics.lead_in_sleep.start_local} -> {metrics.lead_in_sleep.end_local})"
+                )
+            _print_sleep_sessions(metrics)
         return 0
 
     metric_queries: dict[str, Callable[..., list[dict[str, object]]]] = {

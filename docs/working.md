@@ -2,6 +2,24 @@
 
 ## Changelog
 
+### 2026-04-03 (Illness episode tracking in SQLite)
+
+- 新增 `illness_episodes` 表：把生病作为区间型 context 存到 SQLite，而不是塞进现有 numeric sample 表。字段包含 `label`、`severity`、`status`、`start_at`、`end_at`、`notes_json`、`metadata_json`。
+- `db init` 现在会自动创建 illness episode 表；由于当前初始化逻辑基于 `CREATE TABLE IF NOT EXISTS`，给已有数据库升级时新增表是安全路径，不需要额外 `ALTER TABLE` migration。
+- 新增 storage API：`upsert_illness_episodes()`、`record_illness_episode()`、`query_illness_episodes()`。
+- CLI 新增 `illness record` 和 `illness list`：支持记录 active/resolved episode，并用 `symptoms` / `progression` / `notes` 表达主观病程上下文。
+- 新增测试覆盖 illness record/list 的 unit + integration 路径；本次新增测试通过。额外跑到一个既有 `sleep analyze` functional-day 失败，与 illness 改动无关，未在本次顺手修改。
+- 首次真实 illness 记录已写入本地 DB：`2026-04-01T20:00:00-07:00` 开始的 `nasal_congestion` active episode，包含前天晚上开始、昨天天严重、今天早上略微好转但仍在生病的病程描述。
+- 更新 project-local skill：新增 illness CLI 合同与 AI 记录规则，明确 illness episode 应作为独立 context entity 处理。
+
+### 2026-04-02 (Functional-day / lead-in sleep view)
+
+- 新增 `lead_in_sleep` 字段到 `DaySleepMetrics`：明确标出对某个功能日开始前最关键的那段前置睡眠，避免被同一天更晚的长睡眠覆盖。
+- 新增 `functional_date` 到每个 sleep session：非午睡 session 会映射到其真正支撑白天 functioning 的日期（通常是醒来的那天，凌晨短睡也是同日）。
+- 新增 `SleepAnalysisSummary.functional_daily` 和 `avg_lead_in_sleep_hours`：`sleep analyze` 现在同时输出 sleep-day 视图和 functional-day 视图，能直接抓到像 `2026-03-31 02:03-05:45` 这种 3.63h lead-in sleep。
+- 更新 `sleep daily` / `sleep analyze` text output：显示 lead-in sleep 和 functional-day 列表，避免周分析只看 `main_sleep_hours` 时错过主观最差夜晚。
+- 新增/更新测试覆盖该回归场景，并用真实 CLI smoke check 验证：`2026-03-31` 的 sleep-day 仍显示 `main=8.58h`，但 functional-day 正确显示 `lead-in=3.63h`。
+
 ### 2026-04-01 (Sleep date assignment fix, bedtime/wake_time cross-midnight fix, --last-night CLI flag)
 
 - **修复 `assign_samples_to_days` 的日期归属逻辑**：从 per-sample `end_at` 本地日期改为 session-based 归属。每个 session 归到其最早 `start_at` 的本地日期（bedtime 日期），避免跨午夜睡眠被劈成两半分到两天。例如 22:00 入睡 07:00 醒来的睡眠，整个 session 归到 22:00 那天。

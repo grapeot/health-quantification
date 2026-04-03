@@ -163,3 +163,83 @@ def test_record_command_requires_value(tmp_path, monkeypatch, capsys) -> None:
 
     assert exc_info.value.code == 2
     assert "--value" in capsys.readouterr().err
+
+
+def test_record_illness_command_outputs_json(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "cli_record_illness.db"
+    monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
+
+    exit_code = main(
+        [
+            "illness",
+            "record",
+            "--label",
+            "flu_like",
+            "--severity",
+            "moderate",
+            "--status",
+            "active",
+            "--start-time",
+            "2026-04-01T03:00:00Z",
+            "--symptom",
+            "nasal_congestion",
+            "--progression",
+            "yesterday worse",
+            "--note",
+            "today slightly improved but still sick",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data_type"] == "illness"
+    assert payload["label"] == "flu_like"
+    assert payload["severity"] == "moderate"
+    assert payload["episode_status"] == "active"
+    row = fetch_one(
+        db_path,
+        "SELECT label, severity, status, start_at, notes_json, metadata_json FROM illness_episodes",
+    )
+    assert row["label"] == "flu_like"
+    assert row["severity"] == "moderate"
+    assert row["status"] == "active"
+    assert row["start_at"] == "2026-04-01T03:00:00Z"
+    assert json.loads(row["notes_json"]) == ["today slightly improved but still sick"]
+    assert json.loads(row["metadata_json"]) == {
+        "symptoms": ["nasal_congestion"],
+        "progression": ["yesterday worse"],
+    }
+
+
+def test_illness_list_command_outputs_json(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "cli_list_illness.db"
+    monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
+
+    assert (
+        main(
+            [
+                "illness",
+                "record",
+                "--label",
+                "cold",
+                "--severity",
+                "mild",
+                "--status",
+                "resolved",
+                "--start-time",
+                "2026-04-01T03:00:00Z",
+                "--end-time",
+                "2026-04-02T18:00:00Z",
+                "--note",
+                "Recovered quickly",
+            ]
+        )
+        == 0
+    )
+    _ = capsys.readouterr()
+
+    assert main(["illness", "list", "--status", "resolved", "--format", "json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["episodes"][0]["label"] == "cold"
+    assert payload["episodes"][0]["notes"] == ["Recovered quickly"]
