@@ -37,6 +37,9 @@ iPhone (HealthKit) --POST--> Mac (FastAPI:7996) --write--> SQLite
 - macOS + Xcode（编译 iOS app）
 - Python 3.11+（CLI 和后端）
 - 一台 iPhone + Apple Watch（数据源）
+- Apple Developer 账号（HealthKit 真机调试需要）
+- Tailscale（让 iPhone 能访问 Mac 上的后端）
+- Node.js + pm2（可选：用于长期托管后端；直接运行脚本则不需要）
 - 一个 AI 编程工具（Claude Code / Cursor / OpenCode 等）
 
 ### 推荐工作流
@@ -60,7 +63,19 @@ uv pip install --python .venv/bin/python -e .[dev]
 scripts/start_backend.sh
 ```
 
+默认监听 `0.0.0.0:7996`。如果你想改端口或 host，先设置 `HEALTH_QUANT_SERVER_PORT` / `HEALTH_QUANT_SERVER_HOST`。
+
 5. **让 AI 用 Xcode 编译 iOS app**。在真机上运行，授权 HealthKit 访问，点击 Export All 同步数据。
+
+第一次在新机器上编译 iOS app 时，让 AI 带你完成这几个动作：
+
+- 打开 `HealthQuantification/HealthQuantification.xcodeproj`
+- 在 Xcode 的 Signing & Capabilities 中把 Team 改成你自己的 Apple Developer Team
+- 把 app 和 test target 的 Bundle Identifier 改成你自己的命名空间，避免和仓库默认值冲突
+- 选择一台真机而不是 Simulator。HealthKit 导出需要真机权限
+- 在 iPhone 上确认开发者信任和 Health 权限弹窗
+
+启动后端后，iOS app 里的 Server URL 不要填 `localhost`。请填写你的 Mac 在同一个 Tailscale 网络下的地址，例如 `http://100.x.x.x:7996`。
 
 6. **让 AI 做分析**。告诉它你想要什么（比如"帮我分析过去 30 天的综合健康状况"），它会：
    - 调用 CLI 获取各类型 JSON 数据
