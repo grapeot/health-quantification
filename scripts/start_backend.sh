@@ -12,6 +12,6 @@ fi
 export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
 HOST="${HEALTH_QUANT_SERVER_HOST:-0.0.0.0}"
-PORT="${HEALTH_QUANT_SERVER_PORT:-7996}"
+PORT="${HEALTH_QUANT_SERVER_PORT:-7980}"
 
 exec uvicorn health_quantification.server:app --host "${HOST}" --port "${PORT}"

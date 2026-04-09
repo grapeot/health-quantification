@@ -63,7 +63,7 @@ uv pip install --python .venv/bin/python -e .[dev]
 scripts/start_backend.sh
 ```
 
-默认监听 `0.0.0.0:7996`。如果你想改端口或 host，先设置 `HEALTH_QUANT_SERVER_PORT` / `HEALTH_QUANT_SERVER_HOST`。
+启动前先确认 `HEALTH_QUANT_SERVER_PORT` / `HEALTH_QUANT_SERVER_HOST`，并确保 iOS app 里填写的 Server URL 和后端实际监听地址一致。
 
 5. **让 AI 用 Xcode 编译 iOS app**。在真机上运行，授权 HealthKit 访问，点击 Export All 同步数据。
 
