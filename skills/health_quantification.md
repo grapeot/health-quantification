@@ -31,7 +31,29 @@ CLI 提供结构化数据接口（JSON/text）和写入接口（record + illness
 | workouts | `workouts analyze/daily` | — | `/ingest/workouts` |
 | illness | `illness list` | `illness record` | — |
 
-### vitals metric_type 完整列表
+### ⚠️ metric_type 必须使用数据库中的精确名称
+
+**这是最容易出错的地方。** CLI 的 `--metric` 参数直接对应 SQLite 里的 `metric_type` 列值。名字和人类直觉不一致，千万不要自己编。用错名字不会报错，只会返回空数据（count=0），导致分析遗漏。
+
+**常见错误映射（❌ 错误 → ✅ 正确）：**
+
+| ❌ 错误（会返回空数据） | ✅ 正确（数据库中的实际值） | 数据来源 |
+|------------------------|--------------------------|---------|
+| `hrv_sdnn` | `heart_rate_variability_sdnn` | HealthKit |
+| `caffeine` | `dietary_caffeine` | HealthKit 同步；AI 手动记录也用这个 |
+| `alcohol` | `dietary_alcohol` | HealthKit |
+| `steps` | `step_count` | HealthKit |
+| `weight` | `body_mass` | HealthKit |
+| `blood_sugar` | `blood_glucose` | HealthKit |
+| `hr` | `heart_rate` | HealthKit |
+| `resting_hr` | `resting_heart_rate` | HealthKit |
+| `spo2` | `oxygen_saturation` | HealthKit |
+| `energy` | `active_energy_burned` | HealthKit |
+| `breathing_rate` | `respiratory_rate` | HealthKit |
+
+### 所有数据类型的 metric_type 完整列表
+
+#### vitals
 
 | metric_type | unit | 说明 |
 |-------------|------|------|
@@ -41,6 +63,28 @@ CLI 提供结构化数据接口（JSON/text）和写入接口（record + illness
 | respiratory_rate | count/min | 呼吸频率 |
 | oxygen_saturation | % | 血氧 |
 | active_energy_burned | kcal | 活动消耗（连续采样） |
+
+#### body
+
+| metric_type | unit | 说明 |
+|-------------|------|------|
+| body_mass | kg | 体重 |
+| blood_glucose | mg/dL | 血糖 |
+| blood_pressure_systolic | mmHg | 收缩压 |
+| blood_pressure_diastolic | mmHg | 舒张压 |
+
+#### lifestyle
+
+| metric_type | unit | 说明 |
+|-------------|------|------|
+| dietary_caffeine | mg | 咖啡因（HealthKit 同步 + AI 手动记录） |
+| dietary_alcohol | g | 酒精（HealthKit 同步） |
+
+#### activity
+
+| metric_type | unit | 说明 |
+|-------------|------|------|
+| step_count | count | 步数 |
 
 ### workouts 字段
 
@@ -59,6 +103,8 @@ workout_type 为 Apple Health `HKWorkoutActivityType` 名称（如 `fitnessGamin
 ## CLI 合同
 
 ### 查询
+
+> **⚠️ `--metric` 的值必须精确匹配上方的 metric_type 表。** 用错名字（如 `hrv_sdnn`、`caffeine`、`alcohol`、`steps`）不会报错，只会静默返回空数据（count=0）。不确定时先查表，或直接 `sqlite3 data/health_quantification.db "SELECT DISTINCT metric_type FROM {table};"`。
 
 ```bash
 python -m health_quantification.cli doctor config
@@ -164,7 +210,7 @@ AI 完全控制分析过程。典型工作流：
 
 - **相关性分析比单独看均值更有价值**。多维度交叉分析优先于单维度描述性统计。
 - **Phase 2 的 `analyze` 需要指定 `--metric`**（如 `--metric resting_heart_rate`），不像 sleep 可以直接 `analyze --days 30`。workouts 的 `analyze` 不需要 `--metric`。
-- **步数数据的处理**：CLI 返回的是每条记录的值，需要自己按天聚合（avg × count）得到日总步数。
+- **步数数据的处理**：CLI 返回的是每条记录的值，需要先按天聚合出各 source 的日总步数。当 phone 和 watch 都是平时会随身携带的来源时，把它们视为对同一现实步数的重叠观测：未来做步数解释时优先取较高的 source total，不做跨 source 求和。只有在明确知道两个 source 覆盖的是互补时段、并非同时携带时，才考虑相加。
 - **HRV 的 Apple Watch 局限**：主要在睡眠中测量，短睡眠日数据可能不准确。
 - **可视化用 matplotlib 直接画**比 `artifacts/report.py` 更灵活。
 - **sleep 的 daily 分析中**：`total_sleep_hours` 包含主睡眠 + 午睡，`nap_hours` 单独报告午睡时长。bedtime/wake_time 只从主睡眠计算。
@@ -181,6 +227,16 @@ AI 完全控制分析过程。典型工作流：
 - iOS ATS 使用 `NSAllowsArbitraryLoads`（个人项目 + Tailscale 加密内网）
 
 ## 踩坑记录（重要！）
+
+### metric_type 名称不直观，用错会静默返回空数据
+
+这是最高频的踩坑点。CLI `--metric` 必须用数据库里的精确字符串，不是人类直觉的名字。常见错误：
+- `--metric hrv_sdnn` → 实际是 `heart_rate_variability_sdnn`
+- `--metric caffeine` → 实际是 `dietary_caffeine`（AI 手动记录也要用这个，不要用 `caffeine`）
+- `--metric alcohol` → 实际是 `dietary_alcohol`
+- `--metric steps` → 实际是 `step_count`
+
+**不会报错，只返回 count=0 的空结果。** 如果你看到某天"无数据"但用户说有记录，首先检查 metric_type 名字是否正确。
 
 ### 时区与日期归属
 
