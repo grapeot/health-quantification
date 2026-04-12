@@ -30,7 +30,7 @@ final class HealthQuantificationIOSUITests: XCTestCase {
 
         app.buttons["runDoctorButton"].tap()
         XCTAssertTrue(app.staticTexts["healthDataAvailableLabel"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["healthDataAvailable: true"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Available"].waitForExistence(timeout: 2))
 
         app.buttons["requestHealthAccessButton"].tap()
         XCTAssertTrue(app.staticTexts["authorizationStateLabel"].waitForExistence(timeout: 2))
