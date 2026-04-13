@@ -22,6 +22,15 @@ markers = [
 ]
 testpaths = ["tests"]
 
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [
+  { root = ".", extraPaths = ["src"] },
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
