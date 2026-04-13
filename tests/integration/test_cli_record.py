@@ -243,3 +243,64 @@ def test_illness_list_command_outputs_json(tmp_path, monkeypatch, capsys) -> Non
     assert payload["count"] == 1
     assert payload["episodes"][0]["label"] == "cold"
     assert payload["episodes"][0]["notes"] == ["Recovered quickly"]
+
+
+def test_illness_record_can_resolve_existing_episode(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "cli_resolve_illness.db"
+    monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
+
+    assert (
+        main(
+            [
+                "illness",
+                "record",
+                "--label",
+                "nasal_congestion",
+                "--severity",
+                "moderate",
+                "--status",
+                "active",
+                "--start-time",
+                "2026-04-01T03:00:00Z",
+                "--source-id",
+                "episode-1",
+                "--note",
+                "Started feeling sick",
+            ]
+        )
+        == 0
+    )
+    _ = capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "illness",
+                "record",
+                "--label",
+                "nasal_congestion",
+                "--severity",
+                "mild",
+                "--status",
+                "resolved",
+                "--start-time",
+                "2026-04-01T03:00:00Z",
+                "--end-time",
+                "2026-04-05T20:00:00Z",
+                "--source-id",
+                "episode-1",
+                "--note",
+                "Recovered after about four days",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["episode_status"] == "resolved"
+    assert payload["end_at"] == "2026-04-05T20:00:00Z"
+
+    assert main(["illness", "list", "--status", "resolved", "--format", "json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["count"] == 1
+    assert listed["episodes"][0]["source_id"] == "episode-1"
+    assert listed["episodes"][0]["status"] == "resolved"
