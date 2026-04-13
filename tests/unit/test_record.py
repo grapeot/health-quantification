@@ -281,3 +281,45 @@ def test_query_illness_episodes_decodes_json_fields(tmp_path) -> None:
     assert len(episodes) == 1
     assert episodes[0]["notes"] == ["Recovered after one day"]
     assert episodes[0]["metadata"] == {"symptoms": ["congestion"]}
+
+
+def test_record_illness_episode_upserts_existing_episode_to_resolved(tmp_path) -> None:
+    db_path = tmp_path / "resolve_illness.db"
+    initialize_database(db_path)
+
+    record_illness_episode(
+        db_path,
+        {
+            "source": "manual_test",
+            "source_id": "illness-resolve-1",
+            "label": "nasal_congestion",
+            "severity": "moderate",
+            "status": "active",
+            "start_at": "2026-04-01T03:00:00Z",
+            "notes": ["Started feeling sick"],
+            "metadata": {"symptoms": ["nasal_congestion"]},
+        },
+    )
+
+    result = record_illness_episode(
+        db_path,
+        {
+            "source": "manual_test",
+            "source_id": "illness-resolve-1",
+            "label": "nasal_congestion",
+            "severity": "mild",
+            "status": "resolved",
+            "start_at": "2026-04-01T03:00:00Z",
+            "end_at": "2026-04-05T20:00:00Z",
+            "notes": ["Recovered after about four days"],
+            "metadata": {"symptoms": ["nasal_congestion"]},
+        },
+    )
+
+    row = fetch_one(db_path, "SELECT status, severity, end_at, notes_json FROM illness_episodes")
+    assert row["status"] == "resolved"
+    assert row["severity"] == "mild"
+    assert row["end_at"] == "2026-04-05T20:00:00Z"
+    assert json.loads(row["notes_json"]) == ["Recovered after about four days"]
+    assert result["episode_status"] == "resolved"
+    assert result["end_at"] == "2026-04-05T20:00:00Z"
