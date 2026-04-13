@@ -19,6 +19,30 @@ def load_json(path: str) -> dict:
         return json.load(f)
 
 
+def build_daily_step_map(steps_data: dict) -> dict[str, float]:
+    daily_steps: dict[str, float] = {}
+    for day in steps_data.get("daily", []):
+        date = day.get("date")
+        if not isinstance(date, str):
+            continue
+
+        step_estimate = day.get("step_estimate")
+        if isinstance(step_estimate, dict):
+            estimated_steps = step_estimate.get("estimated_steps")
+            if isinstance(estimated_steps, (int, float)):
+                daily_steps[date] = float(estimated_steps)
+                continue
+
+        stats = day.get("stats")
+        if isinstance(stats, dict):
+            avg = stats.get("avg")
+            count = stats.get("count")
+            if isinstance(avg, (int, float)) and isinstance(count, int):
+                daily_steps[date] = float(avg) * count
+
+    return daily_steps
+
+
 def plot_sleep_overview(sleep: dict, steps_data: dict, rhr_data: dict, hrv_data: dict):
     fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
     fig.suptitle("30-Day Health Dashboard (Mar 2 - Mar 31, 2026)", fontsize=16, fontweight="bold", y=0.98)
@@ -41,7 +65,7 @@ def plot_sleep_overview(sleep: dict, steps_data: dict, rhr_data: dict, hrv_data:
     ax1.legend(loc="upper right", fontsize=8)
     ax1.set_ylim(0, 12)
 
-    steps_daily = {d["date"]: d["stats"]["avg"] * d["stats"]["count"] for d in steps_data["daily"]}
+    steps_daily = build_daily_step_map(steps_data)
     steps_vals = [steps_daily.get(d["date"], 0) for d in daily]
     ax2 = axes[1]
     colors = ["#2ECC71" if s >= 8000 else "#F39C12" if s >= 4000 else "#E74C3C" for s in steps_vals]
@@ -136,7 +160,7 @@ def plot_steps_vs_sleep(sleep: dict, steps_data: dict):
     fig.suptitle("Step Count vs Sleep Duration", fontsize=14, fontweight="bold")
 
     daily = sleep["daily"]
-    steps_daily = {d["date"]: d["stats"]["avg"] * d["stats"]["count"] for d in steps_data["daily"]}
+    steps_daily = build_daily_step_map(steps_data)
 
     paired = []
     for d in daily:
@@ -178,7 +202,7 @@ def plot_weekly_comparison(sleep: dict, steps_data: dict, rhr_data: dict, hrv_da
             weeks[week_start] = {"sleep": [], "rhr": [], "hrv": [], "steps": []}
         weeks[week_start]["sleep"].append(d["total_sleep_hours"])
 
-    steps_daily = {d["date"]: d["stats"]["avg"] * d["stats"]["count"] for d in steps_data["daily"]}
+    steps_daily = build_daily_step_map(steps_data)
     rhr_daily = {d["date"]: d["stats"]["avg"] for d in rhr_data["daily"] if d["stats"]["avg"]}
     hrv_daily = {d["date"]: d["stats"]["avg"] for d in hrv_data["daily"] if d["stats"]["avg"]}
 

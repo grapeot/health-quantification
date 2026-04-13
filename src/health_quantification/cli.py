@@ -205,6 +205,12 @@ def _print_metric_analysis_text(summary: MetricAnalysisSummary) -> None:
         print(
             f"  {day.date}: count={day.stats.count} avg={day.stats.avg} min={day.stats.min} max={day.stats.max} std={day.stats.std} unit={day.unit}"
         )
+        if day.step_estimate is not None:
+            print(
+                "    step_estimate: "
+                f"estimated_steps={day.step_estimate.get('estimated_steps')} "
+                f"method={day.step_estimate.get('method')}"
+            )
 
 
 def _print_metric_daily_text(summary: MetricDailySummary) -> None:
@@ -213,6 +219,12 @@ def _print_metric_daily_text(summary: MetricDailySummary) -> None:
         print(
             f"  {metric.metric_type}: count={metric.stats.count} avg={metric.stats.avg} min={metric.stats.min} max={metric.stats.max} std={metric.stats.std} unit={metric.unit}"
         )
+        if metric.step_estimate is not None:
+            print(
+                "    step_estimate: "
+                f"estimated_steps={metric.step_estimate.get('estimated_steps')} "
+                f"method={metric.step_estimate.get('method')}"
+            )
     if not summary.metrics:
         print("  no data")
 
@@ -288,12 +300,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "record":
         initialize_database(settings.db_path)
-        metadata: dict[str, object] = {}
+        sample_metadata: dict[str, object] = {}
         if args.note:
-            metadata["note"] = args.note
+            sample_metadata["note"] = args.note
         sample: dict[str, object] = {
             "source": args.source,
-            "metadata": metadata,
+            "metadata": sample_metadata,
         }
         if args.data_type == "sleep":
             sample["start_at"] = args.time
@@ -316,11 +328,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "illness" and args.illness_command == "record":
         initialize_database(settings.db_path)
-        metadata: dict[str, object] = {}
+        illness_metadata: dict[str, object] = {}
         if args.symptom:
-            metadata["symptoms"] = args.symptom
+            illness_metadata["symptoms"] = args.symptom
         if args.progression:
-            metadata["progression"] = args.progression
+            illness_metadata["progression"] = args.progression
         result = record_illness_episode(
             settings.db_path,
             {
@@ -332,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
                 "start_at": args.start_time,
                 "end_at": args.end_time,
                 "notes": args.note,
-                "metadata": metadata,
+                "metadata": illness_metadata,
             },
         )
         print(json.dumps(result, indent=2, sort_keys=True))
