@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import cast
+from zoneinfo import ZoneInfo
 
 from health_quantification.analysis.sleep import (
     compute_analysis,
@@ -26,6 +28,14 @@ def _make_sample(
         "source_name": "Test",
         "metadata_json": "{}",
     }
+
+
+def _local_to_utc(day_offset: int, hour: int, minute: int) -> str:
+    tz = ZoneInfo("America/Los_Angeles")
+    base_date = datetime.now(tz).date() - timedelta(days=2)
+    local_dt = datetime.combine(base_date + timedelta(days=day_offset), datetime.min.time(), tzinfo=tz)
+    local_dt = local_dt.replace(hour=hour, minute=minute)
+    return local_dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def test_compute_day_metrics_basic() -> None:
@@ -55,6 +65,7 @@ def test_compute_day_metrics_empty() -> None:
     assert metrics.bedtime is None
     assert metrics.wake_time is None
     assert metrics.sleep_efficiency is None
+    assert metrics.sessions == []
 
 
 def test_compute_day_metrics_nap_detection() -> None:
@@ -64,7 +75,11 @@ def test_compute_day_metrics_nap_detection() -> None:
     metrics = compute_day_metrics(samples, "2026-03-29", "America/Los_Angeles")
     assert metrics.has_nap is True
     assert metrics.total_sleep_hours == 1.0
-    assert metrics.nap_hours == 0.0
+    assert metrics.main_sleep_hours == 0.0
+    assert metrics.nap_hours == 1.0
+    assert metrics.sessions is not None
+    assert len(metrics.sessions) == 1
+    assert metrics.sessions[0].session_type == "nap"
 
 
 def test_compute_day_metrics_no_nap() -> None:
@@ -100,7 +115,15 @@ def test_compute_day_metrics_main_sleep_and_afternoon_nap() -> None:
     assert metrics.wake_time == "05:45"
     assert metrics.total_sleep_hours == 5.95
     assert metrics.nap_hours == 2.25
+    assert metrics.additional_sleep_hours == 0.0
     assert metrics.has_nap is True
+    assert metrics.lead_in_sleep is not None
+    assert metrics.lead_in_sleep.sleep_hours == 3.7
+    assert metrics.lead_in_sleep.session_type == "main"
+    assert metrics.sessions is not None
+    assert [session.session_type for session in metrics.sessions] == ["main", "nap"]
+    assert metrics.sessions[0].start_local == "2026-03-31T02:03:00-07:00"
+    assert metrics.sessions[1].start_local == "2026-03-31T12:41:00-07:00"
 
 
 def test_compute_day_metrics_main_sleep_and_staged_nap() -> None:
@@ -119,6 +142,9 @@ def test_compute_day_metrics_main_sleep_and_staged_nap() -> None:
     assert metrics.rem_sleep_hours == 1.0
     assert metrics.nap_hours == 1.0
     assert metrics.has_nap is True
+    assert metrics.sessions is not None
+    assert [session.session_type for session in metrics.sessions] == ["main", "nap"]
+    assert metrics.sessions[1].deep_sleep_hours == 0.25
 
 
 def test_compute_day_metrics_multiple_naps_accumulate_nap_hours() -> None:
@@ -132,6 +158,8 @@ def test_compute_day_metrics_multiple_naps_accumulate_nap_hours() -> None:
     assert metrics.total_sleep_hours == 6.25
     assert metrics.nap_hours == 1.25
     assert metrics.has_nap is True
+    assert metrics.sessions is not None
+    assert [session.session_type for session in metrics.sessions] == ["main", "nap", "nap"]
 
 
 def test_compute_day_metrics_nap_only_day() -> None:
@@ -140,8 +168,11 @@ def test_compute_day_metrics_nap_only_day() -> None:
     ]
     metrics = compute_day_metrics(samples, "2026-03-15", "America/Los_Angeles")
     assert metrics.total_sleep_hours == 1.0
-    assert metrics.nap_hours == 0.0
+    assert metrics.main_sleep_hours == 0.0
+    assert metrics.nap_hours == 1.0
     assert metrics.has_nap is True
+    assert metrics.sessions is not None
+    assert metrics.sessions[0].session_type == "nap"
 
 
 def test_compute_day_metrics_brief_gap_not_false_nap() -> None:
@@ -157,17 +188,20 @@ def test_compute_day_metrics_brief_gap_not_false_nap() -> None:
 
 
 def test_compute_analysis_summary() -> None:
+    tz = ZoneInfo("America/Los_Angeles")
+    base_date = datetime.now(tz).date() - timedelta(days=2)
     samples = [
-        _make_sample("s1", "2026-03-30T14:00:00Z", "2026-03-30T15:00:00Z", "in_bed", 0),
-        _make_sample("s2", "2026-03-30T15:00:00Z", "2026-03-30T22:00:00Z", "asleep_core", 2),
-        _make_sample("s3", "2026-03-31T14:00:00Z", "2026-03-31T15:00:00Z", "in_bed", 0),
-        _make_sample("s4", "2026-03-31T15:00:00Z", "2026-04-01T22:00:00Z", "asleep_core", 2),
+        _make_sample("s1", _local_to_utc(0, 7, 0), _local_to_utc(0, 8, 0), "in_bed", 0),
+        _make_sample("s2", _local_to_utc(0, 8, 0), _local_to_utc(0, 15, 0), "asleep_core", 2),
+        _make_sample("s3", _local_to_utc(1, 7, 0), _local_to_utc(1, 8, 0), "in_bed", 0),
+        _make_sample("s4", _local_to_utc(1, 8, 0), _local_to_utc(2, 15, 0), "asleep_core", 2),
     ]
     analysis = compute_analysis(samples, days=3, tz_name="America/Los_Angeles")
     assert analysis.total_samples == 4
     assert analysis.days_with_data == 2
     assert analysis.avg_sleep_hours > 0
     assert len(analysis.daily) == 3
+    assert base_date.isoformat() in [day.date for day in analysis.daily]
 
 
 def test_compute_analysis_to_dict() -> None:
@@ -226,3 +260,47 @@ def test_assign_samples_to_days_after_midnight_session() -> None:
 
     metrics = compute_day_metrics(days["2026-04-01"], "2026-04-01", "America/Los_Angeles")
     assert metrics.bedtime == "01:00"
+
+
+def test_compute_day_metrics_separates_additional_sleep_from_nap() -> None:
+    samples = [
+        _make_sample("a1", "2026-03-31T09:03:00Z", "2026-03-31T10:33:00Z", "asleep_core", 2),
+        _make_sample("a2", "2026-03-31T10:33:00Z", "2026-03-31T11:33:00Z", "asleep_deep", 3),
+        _make_sample("a3", "2026-03-31T11:33:00Z", "2026-03-31T12:45:00Z", "asleep_rem", 4),
+        _make_sample("b1", "2026-03-31T19:41:00Z", "2026-03-31T21:56:00Z", "asleep_unspecified", 5),
+        _make_sample("c1", "2026-04-01T05:01:48Z", "2026-04-01T06:01:48Z", "asleep_core", 2),
+        _make_sample("c2", "2026-04-01T06:01:48Z", "2026-04-01T13:01:48Z", "asleep_rem", 4),
+    ]
+    metrics = compute_day_metrics(samples, "2026-03-31", "America/Los_Angeles")
+    assert metrics.main_sleep_hours == 8.0
+    assert metrics.nap_hours == 2.25
+    assert metrics.additional_sleep_hours == 3.7
+    assert metrics.total_sleep_hours == 13.95
+    assert metrics.sessions is not None
+    assert [session.session_type for session in metrics.sessions] == ["additional_sleep", "nap", "main"]
+    assert metrics.lead_in_sleep is not None
+    assert metrics.lead_in_sleep.sleep_hours == 3.7
+    assert metrics.lead_in_sleep.session_type == "additional_sleep"
+
+
+def test_compute_analysis_functional_daily_captures_bad_night() -> None:
+    tz = ZoneInfo("America/Los_Angeles")
+    base_date = datetime.now(tz).date() - timedelta(days=2)
+    second_date = base_date + timedelta(days=1)
+    samples = [
+        _make_sample("a1", _local_to_utc(0, 2, 3), _local_to_utc(0, 3, 33), "asleep_core", 2),
+        _make_sample("a2", _local_to_utc(0, 3, 33), _local_to_utc(0, 4, 33), "asleep_deep", 3),
+        _make_sample("a3", _local_to_utc(0, 4, 33), _local_to_utc(0, 5, 45), "asleep_rem", 4),
+        _make_sample("b1", _local_to_utc(0, 12, 41), _local_to_utc(0, 14, 56), "asleep_unspecified", 5),
+        _make_sample("c1", _local_to_utc(0, 22, 1), _local_to_utc(0, 23, 1), "asleep_core", 2),
+        _make_sample("c2", _local_to_utc(0, 23, 1), _local_to_utc(1, 6, 1), "asleep_rem", 4),
+        _make_sample("d1", _local_to_utc(1, 23, 10), _local_to_utc(2, 6, 30), "asleep_core", 2),
+    ]
+    analysis = compute_analysis(samples, days=3, tz_name="America/Los_Angeles")
+    functional_by_date = {day.date: day for day in analysis.functional_daily}
+    first_lead_in = functional_by_date[base_date.isoformat()].lead_in_sleep
+    second_lead_in = functional_by_date[second_date.isoformat()].lead_in_sleep
+    assert first_lead_in is not None
+    assert first_lead_in.sleep_hours == 3.7
+    assert second_lead_in is not None
+    assert second_lead_in.sleep_hours == 8.0
