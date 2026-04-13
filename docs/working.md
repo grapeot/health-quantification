@@ -2,6 +2,16 @@
 
 ## Changelog
 
+### 2026-04-13 (Canonical step estimate in CLI, downstream fix)
+
+- `activity daily` / `activity analyze --metric step_count` 现在在保留 raw sample `stats` 的同时，新增 `step_estimate` 字段，避免下游把 sample-level `avg/count` 误当成 canonical 日步数。
+- `step_estimate` 当前支持两种明确语义：单一来源日使用 `single_source_total`；检测到 1 个 watch-like source + 1 个其他 source 时，按项目既有规则输出 `overlapping_sources_max_times_1.05`，并附带 `source_daily_totals` 与 explanation。
+- 对多来源但无法判断 overlap/complement 关系的情况，CLI 返回 `estimated_steps=null` 和 `source_resolution_required`，显式拒绝伪精确。
+- 更新 CLI text output：遇到 `step_estimate` 时直接打印 `estimated_steps` 和 `method`，减少人工读 JSON 时的误判空间。
+- 修复仓库内下游消费方 `scripts/gen_health_dashboard.py`：优先读取 `step_estimate.estimated_steps`，仅在旧数据没有该字段时 fallback 到历史的 `avg * count`。
+- 新增测试覆盖：步数 estimate 的 daily/analyze 输出，以及 illness episode 用相同 `source_id` 从 active upsert 到 resolved 的 unit + integration 路径。
+- 隐私核查要求：本次改动只涉及聚合逻辑、测试 fixture 和 working notes；不新增真实健康明细、不新增导出文件、不提交本地 DB。
+
 ### 2026-04-03 (Illness episode tracking in SQLite)
 
 - 新增 `illness_episodes` 表：把生病作为区间型 context 存到 SQLite，而不是塞进现有 numeric sample 表。字段包含 `label`、`severity`、`status`、`start_at`、`end_at`、`notes_json`、`metadata_json`。
