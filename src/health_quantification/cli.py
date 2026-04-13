@@ -205,6 +205,12 @@ def _print_metric_analysis_text(summary: MetricAnalysisSummary) -> None:
         print(
             f"  {day.date}: count={day.stats.count} avg={day.stats.avg} min={day.stats.min} max={day.stats.max} std={day.stats.std} unit={day.unit}"
         )
+        if day.step_estimate is not None:
+            print(
+                "    step_estimate: "
+                f"estimated_steps={day.step_estimate.get('estimated_steps')} "
+                f"method={day.step_estimate.get('method')}"
+            )
 
 
 def _print_metric_daily_text(summary: MetricDailySummary) -> None:
@@ -213,6 +219,12 @@ def _print_metric_daily_text(summary: MetricDailySummary) -> None:
         print(
             f"  {metric.metric_type}: count={metric.stats.count} avg={metric.stats.avg} min={metric.stats.min} max={metric.stats.max} std={metric.stats.std} unit={metric.unit}"
         )
+        if metric.step_estimate is not None:
+            print(
+                "    step_estimate: "
+                f"estimated_steps={metric.step_estimate.get('estimated_steps')} "
+                f"method={metric.step_estimate.get('method')}"
+            )
     if not summary.metrics:
         print("  no data")
 
