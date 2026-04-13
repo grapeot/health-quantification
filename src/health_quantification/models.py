@@ -50,6 +50,7 @@ class DailyMetricStats:
     metric_type: str
     unit: str | None
     stats: BasicStats
+    step_estimate: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

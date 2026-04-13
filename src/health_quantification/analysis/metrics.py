@@ -54,6 +54,77 @@ def _sample_value(sample: dict[str, object]) -> float:
     raise ValueError("sample value must be numeric")
 
 
+def _sample_source_name(sample: dict[str, object]) -> str:
+    source_name = sample.get("source_name")
+    if isinstance(source_name, str) and source_name.strip():
+        return source_name.strip()
+    source_id = sample.get("source_id")
+    if isinstance(source_id, str) and source_id.strip():
+        return source_id.strip()
+    source = sample.get("source")
+    if isinstance(source, str) and source.strip():
+        return source.strip()
+    return "unknown"
+
+
+def _is_watch_source(source_name: str) -> bool:
+    return "watch" in source_name.lower()
+
+
+def _build_step_estimate(metric_samples: list[dict[str, object]]) -> dict[str, object] | None:
+    if not metric_samples:
+        return None
+
+    source_totals: dict[str, float] = defaultdict(float)
+    for sample in metric_samples:
+        source_totals[_sample_source_name(sample)] += _sample_value(sample)
+
+    ordered_totals = [
+        {"source_name": source_name, "steps": round(total, 3)}
+        for source_name, total in sorted(source_totals.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+    if len(ordered_totals) == 1:
+        only_total = ordered_totals[0]
+        return {
+            "estimated_steps": round(float(only_total["steps"])),
+            "unit": "count",
+            "method": "single_source_total",
+            "explanation": f"Single source day from {only_total['source_name']}; using that source total directly.",
+            "source_daily_totals": ordered_totals,
+        }
+
+    watch_sources = [item for item in ordered_totals if _is_watch_source(str(item["source_name"]))]
+    if len(ordered_totals) == 2 and len(watch_sources) == 1:
+        max_total = max(float(item["steps"]) for item in ordered_totals)
+        estimated_steps = round(max_total * 1.05)
+        watch_name = str(watch_sources[0]["source_name"])
+        other_name = next(
+            str(item["source_name"]) for item in ordered_totals if str(item["source_name"]) != watch_name
+        )
+        return {
+            "estimated_steps": estimated_steps,
+            "unit": "count",
+            "method": "overlapping_sources_max_times_1.05",
+            "explanation": (
+                f"Detected overlapping watch/phone-like sources ({watch_name}, {other_name}); "
+                "using max(source totals) * 1.05 per project rule."
+            ),
+            "source_daily_totals": ordered_totals,
+        }
+
+    return {
+        "estimated_steps": None,
+        "unit": "count",
+        "method": "source_resolution_required",
+        "explanation": (
+            "Multiple sources present but overlap/complement relationship is ambiguous; "
+            "returning source totals without a canonical estimate."
+        ),
+        "source_daily_totals": ordered_totals,
+    }
+
+
 def compute_basic_stats(values: list[float]) -> BasicStats:
     if not values:
         return BasicStats(count=0, avg=None, min=None, max=None, std=None)
@@ -98,6 +169,7 @@ def compute_metric_analysis(
                 metric_type=metric_type,
                 unit=_sample_unit(day_samples),
                 stats=compute_basic_stats(values),
+                step_estimate=_build_step_estimate(day_samples) if metric_type == "step_count" else None,
             )
         )
 
@@ -135,6 +207,7 @@ def compute_metric_daily_summary(
             metric_type=metric_type,
             unit=_sample_unit(metric_samples),
             stats=compute_basic_stats([_sample_value(sample) for sample in metric_samples]),
+            step_estimate=_build_step_estimate(metric_samples) if metric_type == "step_count" else None,
         )
         for metric_type, metric_samples in sorted(grouped.items())
     ]
