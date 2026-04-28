@@ -2,6 +2,14 @@
 
 ## Changelog
 
+### 2026-04-28 (Fix `sleep daily --last-night` for after-midnight sleep starts)
+
+- 修复 `sleep daily --last-night` 的日期选择逻辑：不再简单映射到“昨天”这个自然日，而是返回**最近一段有效的夜间主睡眠**，以 functional-night 语义选择最新 lead-in sleep session。
+- 这个修复覆盖了一个真实故障场景：当整晚主睡眠在本地时间午夜后才开始时，session 会按既有 sleep-day 规则归到“今天”，旧版 `--last-night` 因此会错误查昨天并返回空结果。
+- 新增测试覆盖：unit test 验证 after-midnight main sleep 会被 `compute_last_night_metrics()` 选中；integration test 验证 CLI `sleep daily --last-night` 在该场景下返回正确结果，并忽略前一天白天 nap。
+- 撤掉一次性 iOS 调试日志：确认问题不在 HealthKit fetch 或 FastAPI ingestion，而在 CLI 的 last-night 语义；恢复 iOS 端到正常日志量。
+- 隐私核查：本次改动仅涉及 CLI 选择逻辑、测试 fixture、工作记录与文档说明；不新增真实健康样本、不提交设备日志、不提交本地 SQLite 数据。
+
 ### 2026-04-13 (Canonical step estimate in CLI, downstream fix)
 
 - `activity daily` / `activity analyze --metric step_count` 现在在保留 raw sample `stats` 的同时，新增 `step_estimate` 字段，避免下游把 sample-level `avg/count` 误当成 canonical 日步数。

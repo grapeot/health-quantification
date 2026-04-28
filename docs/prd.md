@@ -60,6 +60,13 @@ AI 是第一优先级用户。它需要稳定的命令入口、可预测的 JSON
 
 这个项目的价值不在 GUI，而在 library。CLI 负责 analytics 和数据写入，FastAPI 负责 batch ingestion（iOS/硬件批量同步），SQLite 是唯一事实来源。三者共享同一个数据库和同一套 schema。
 
+在睡眠 readout 上，CLI 需要同时支持两种明确语义：
+
+- `sleep daily --date YYYY-MM-DD`：按 sleep-day 读取，保持 bedtime 日期归属
+- `sleep daily --last-night`：按用户语义读取最近一段夜间主睡眠，不受“午夜后才真正入睡”影响
+
+这两种语义必须被清楚区分，避免把产品里的“昨晚”错误实现成“昨天这个自然日”。
+
 ### 数据库即事实来源
 
 SQLite 不是 HealthKit 的镜像，而是主存储。HealthKit 是数据源之一，AI 手动记录、第三方硬件（Fitbit、三星手表等）都是平等的数据源。每个数据点通过 `source` 字段标识来源（`apple_health_ios`、`ai_manual`、`fitbit` 等），同一条数据可以来自多个来源。
