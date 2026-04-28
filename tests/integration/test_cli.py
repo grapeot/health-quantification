@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import health_quantification.analysis.metrics as metrics_module
+import health_quantification.cli as cli_module
 from health_quantification.cli import main
 from health_quantification.storage import (
     initialize_database,
@@ -267,6 +269,85 @@ def test_sleep_cli_analyze_outputs_functional_daily(tmp_path, monkeypatch, capsy
     assert functional[second_date.isoformat()]["lead_in_sleep"]["sleep_hours"] == 8.0
 
 
+def test_sleep_cli_last_night_uses_latest_functional_sleep(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "cli_sleep_last_night.db"
+    monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
+    initialize_database(db_path)
+
+    tz = ZoneInfo("America/Los_Angeles")
+    fake_now = datetime(2026, 4, 28, 8, 0, tzinfo=tz)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            if tz is None:
+                return fake_now.replace(tzinfo=None)
+            return fake_now.astimezone(tz)
+
+    monkeypatch.setattr(cli_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(metrics_module, "datetime", FixedDateTime)
+
+    upsert_sleep_samples(
+        db_path,
+        [
+            {
+                "source": "apple_health_ios",
+                "source_id": "nap-yesterday",
+                "start_at": "2026-04-27T21:00:00Z",
+                "end_at": "2026-04-27T22:00:00Z",
+                "stage": "asleep_unspecified",
+                "stage_value": 5,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            },
+            {
+                "source": "apple_health_ios",
+                "source_id": "last-night-1",
+                "start_at": "2026-04-27T07:02:32Z",
+                "end_at": "2026-04-27T07:04:01Z",
+                "stage": "asleep_core",
+                "stage_value": 2,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            },
+            {
+                "source": "apple_health_ios",
+                "source_id": "last-night-2",
+                "start_at": "2026-04-27T07:04:01Z",
+                "end_at": "2026-04-27T07:06:31Z",
+                "stage": "awake",
+                "stage_value": 1,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            },
+            {
+                "source": "apple_health_ios",
+                "source_id": "last-night-3",
+                "start_at": "2026-04-27T07:06:31Z",
+                "end_at": "2026-04-27T13:50:11Z",
+                "stage": "asleep_core",
+                "stage_value": 2,
+                "source_bundle_id": "com.apple.health",
+                "source_name": "Health",
+                "metadata": {},
+            },
+        ],
+    )
+
+    assert main(["sleep", "daily", "--last-night", "--format", "json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["date"] == "2026-04-27"
+    assert payload["bedtime"] == "00:02"
+    assert payload["main_sleep_hours"] == 6.75
+    assert payload["sample_count"] == 3
+    assert payload["nap_hours"] == 0.0
+    assert len(payload["sessions"]) == 1
+    assert payload["sessions"][0]["session_type"] == "main"
+
+
 def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "cli_steps_daily.db"
     monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
@@ -342,6 +423,19 @@ def test_activity_analyze_outputs_step_estimate_for_step_count(tmp_path, monkeyp
     db_path = tmp_path / "cli_steps_analyze.db"
     monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
     initialize_database(db_path)
+
+    tz = ZoneInfo("America/Los_Angeles")
+    fake_now = datetime(2026, 4, 13, 12, 0, tzinfo=tz)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            if tz is None:
+                return fake_now.replace(tzinfo=None)
+            return fake_now.astimezone(tz)
+
+    monkeypatch.setattr(cli_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(metrics_module, "datetime", FixedDateTime)
 
     upsert_activity_samples(
         db_path,
