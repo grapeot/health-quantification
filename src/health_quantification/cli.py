@@ -13,6 +13,7 @@ from health_quantification.analysis.metrics import (
 )
 from health_quantification.analysis.sleep import (
     DaySleepMetrics,
+    SleepSessionMetrics,
     assign_samples_to_days,
     compute_analysis,
     compute_day_metrics,
@@ -39,14 +40,9 @@ def _check_data_freshness(days_map: dict[str, list[dict[str, object]]], tz_name:
     tz = ZoneInfo(tz_name)
     today = datetime.now(tz).date().isoformat()
     yesterday = (datetime.now(tz).date() - timedelta(days=1)).isoformat()
-    missing: list[str] = []
-    if not days_map.get(today):
-        missing.append(today)
-    if not days_map.get(yesterday):
-        missing.append(yesterday)
-    if missing:
+    if not days_map.get(today) and not days_map.get(yesterday):
         print(
-            f"[WARNING] No sleep data for {', '.join(missing)}. Open the iOS app and sync for up-to-date analysis.",
+            f"[WARNING] No sleep data for {yesterday}, {today}. Open the iOS app and sync for up-to-date analysis.",
             file=sys.stderr,
         )
 
@@ -245,6 +241,54 @@ def _print_sleep_sessions(metrics: DaySleepMetrics) -> None:
         )
 
 
+def _compute_last_night_metrics(
+    samples: list[dict[str, object]],
+    tz_name: str,
+) -> DaySleepMetrics:
+    tz = ZoneInfo(tz_name)
+    days_map = assign_samples_to_days(samples, tz_name)
+    if not days_map:
+        today = datetime.now(tz).date().isoformat()
+        return compute_day_metrics([], today, tz_name)
+
+    candidates: list[tuple[datetime, str, SleepSessionMetrics]] = []
+    for date_str, day_samples in days_map.items():
+        metrics = compute_day_metrics(day_samples, date_str, tz_name)
+        for session in metrics.sessions or []:
+            if session.session_type == "nap" or session.functional_date is None:
+                continue
+            end_local = datetime.fromisoformat(session.end_local)
+            candidates.append((end_local, session.functional_date, session))
+
+    if not candidates:
+        latest_date = max(days_map)
+        return compute_day_metrics(days_map.get(latest_date, []), latest_date, tz_name)
+
+    _, target_date, lead_in_session = max(candidates, key=lambda item: item[0])
+    return DaySleepMetrics(
+        date=target_date,
+        timezone=tz_name,
+        bedtime=lead_in_session.start_local[11:16],
+        wake_time=lead_in_session.end_local[11:16],
+        total_sleep_hours=lead_in_session.sleep_hours,
+        main_sleep_hours=lead_in_session.sleep_hours,
+        additional_sleep_hours=0.0,
+        total_in_bed_hours=lead_in_session.in_bed_hours,
+        sleep_efficiency=round((lead_in_session.sleep_hours / lead_in_session.in_bed_hours) * 100, 1)
+        if lead_in_session.in_bed_hours > 0 else None,
+        deep_sleep_hours=lead_in_session.deep_sleep_hours,
+        core_sleep_hours=lead_in_session.core_sleep_hours,
+        rem_sleep_hours=lead_in_session.rem_sleep_hours,
+        awake_hours=lead_in_session.awake_hours,
+        unspecified_hours=lead_in_session.unspecified_hours,
+        sample_count=lead_in_session.sample_count,
+        nap_hours=0.0,
+        has_nap=False,
+        sessions=[lead_in_session],
+        lead_in_sleep=lead_in_session,
+    )
+
+
 def _run_metric_command(
     *,
     data_type: str,
@@ -421,14 +465,15 @@ def main(argv: list[str] | None = None) -> int:
         _check_data_freshness(days_map, settings.timezone)
 
         if args.last_night:
-            target_date = (datetime.now(ZoneInfo(settings.timezone)) - timedelta(days=1)).date().isoformat()
+            metrics = _compute_last_night_metrics(samples, settings.timezone)
         elif args.date:
             target_date = args.date
+            day_samples = days_map.get(target_date, [])
+            metrics = compute_day_metrics(day_samples, target_date, settings.timezone)
         else:
             target_date = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
-
-        day_samples = days_map.get(target_date, [])
-        metrics = compute_day_metrics(day_samples, target_date, settings.timezone)
+            day_samples = days_map.get(target_date, [])
+            metrics = compute_day_metrics(day_samples, target_date, settings.timezone)
         if args.format == "json":
             print(json.dumps(metrics.to_dict(), indent=2))
         else:
