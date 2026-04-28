@@ -213,6 +213,17 @@ AI 对话 --CLI record-->                                          --> 分析报
 
 ## 数据模型
 
+### CLI `sleep daily --last-night` 语义
+
+`--last-night` 不等同于“昨天这个自然日”。它应返回**最近一段有效的夜间主睡眠**，也就是最新的 lead-in sleep session。这样可以覆盖一种常见情况：用户在本地时间午夜后才真正入睡，此时该 session 会按 sleep-day 规则归到“今天”，但从用户语义上仍然属于昨晚。
+
+具体约束：
+
+- 优先返回最近一个非 nap 的主睡眠 session
+- 允许该 session 的本地 `start_at` 落在今天凌晨
+- 不把前一天白天 nap 或短 additional sleep 误判成 last night
+- `sleep daily --date YYYY-MM-DD` 继续保留 sleep-day 语义，不做 functional-night 重写
+
 ### sleep_samples 表
 
 ```sql
