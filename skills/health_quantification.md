@@ -104,7 +104,7 @@ workout_type 为 Apple Health `HKWorkoutActivityType` 名称（如 `fitnessGamin
 
 ### 查询
 
-> **⚠️ `--metric` 的值必须精确匹配上方的 metric_type 表。** 用错名字（如 `hrv_sdnn`、`caffeine`、`alcohol`、`steps`）不会报错，只会静默返回空数据（count=0）。不确定时先查表，或直接 `sqlite3 data/health_quantification.db "SELECT DISTINCT metric_type FROM {table};"`。
+> **⚠️ `--metric` 只用于 `analyze` 命令，不用于 `daily`。** 且它的值必须精确匹配上方的 metric_type 表。用错名字（如 `hrv_sdnn`、`caffeine`、`alcohol`、`steps`）不会报错，只会静默返回空数据（count=0）。不确定时先查表，或直接 `sqlite3 data/health_quantification.db "SELECT DISTINCT metric_type FROM {table};"`。
 
 ```bash
 python -m health_quantification.cli doctor config
@@ -128,6 +128,8 @@ python -m health_quantification.cli illness list --status active|resolved|all --
 ```
 
 ### 写入（AI 手动记录 / 对话触发）
+
+`daily` 返回的是该日期下该数据类型的聚合结果，不接收 `--metric`。例如 `vitals daily` 会返回当天已有的全部 vitals metric，`lifestyle daily` 会返回当天已有的 caffeine / alcohol 等条目聚合。
 
 ```bash
 python -m health_quantification.cli record lifestyle --metric dietary_caffeine --value 57 --unit mg --time "2026-03-31T12:00:00-07:00" --note "Costco Mexican Coke 500ml"
@@ -210,7 +212,7 @@ AI 完全控制分析过程。典型工作流：
 
 - **相关性分析比单独看均值更有价值**。多维度交叉分析优先于单维度描述性统计。
 - **Phase 2 的 `analyze` 需要指定 `--metric`**（如 `--metric resting_heart_rate`），不像 sleep 可以直接 `analyze --days 30`。workouts 的 `analyze` 不需要 `--metric`。
-- **步数数据的处理**：CLI 返回的是每条记录的值，需要先按天聚合出各 source 的日总步数。当 phone 和 watch 都是平时会随身携带的来源时，把它们视为对同一现实步数的重叠观测：未来做步数解释时优先取较高的 source total，不做跨 source 求和。只有在明确知道两个 source 覆盖的是互补时段、并非同时携带时，才考虑相加。
+- **步数数据的处理**：CLI 返回的是每条记录的值，需要先按天聚合出各 source 的日总步数。当 phone 和 watch 都是平时会随身携带的来源时，把它们视为对同一现实步数的重叠观测：**取 max(phone, watch) × 1.05 作为日步数估计**，不做跨 source 求和。乘 1.05 是因为绝大多数时间两个设备同时佩戴，但偶尔会出现一方没戴上的情况，造成约 5% 的漏计。只有在明确知道两个 source 覆盖的是互补时段、并非同时携带时，才考虑相加。
 - **HRV 的 Apple Watch 局限**：主要在睡眠中测量，短睡眠日数据可能不准确。
 - **可视化用 matplotlib 直接画**比 `artifacts/report.py` 更灵活。
 - **sleep 的 daily 分析中**：`total_sleep_hours` 包含主睡眠 + 午睡，`nap_hours` 单独报告午睡时长。bedtime/wake_time 只从主睡眠计算。
@@ -248,10 +250,10 @@ AI 完全控制分析过程。典型工作流：
 
 **这是最容易出错的地方。** sleep 的日期归属用 session 的 bedtime 日期（session 中最早 `start_at` 的本地日期），不是 `end_at` 的本地日期。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 22:00 那天的日期上。
 
-**"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**昨天晚上 8 点以后开始、今天早上结束的那一次夜间主睡眠**。不包括当天凌晨的补觉、白天的午睡、或更早的睡眠 session。
+**"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**最近一段夜间主睡眠**。这段睡眠通常是昨天晚上开始、今天早上结束，但也允许用户在本地时间午夜后才真正入睡。它不包括白天午睡，也不等同于“昨天这个自然日”。
 
 具体规则：
-- "昨晚睡得怎么样" → 用 `sleep daily --last-night`，但**只看 main session 的指标**（bedtime、wake_time、deep/core/rem），忽略 `total_sleep_hours` 和 `nap_hours`（那里面混了同一天其他 session）
+- "昨晚睡得怎么样" → 用 `sleep daily --last-night`，它会返回**最近一段有效夜间主睡眠**，但**只看 main session 的指标**（bedtime、wake_time、deep/core/rem），忽略 `total_sleep_hours` 和 `nap_hours`（那里面混了同一天其他 session）
 - 如果 main session 的 bedtime 在 20:00 之前，说明它可能不是昨晚的睡眠，需要人工判断
 - "今天到现在怎么样" → vitals/lifestyle/activity 用 `--date 今天`，睡眠部分用 `--last-night` 的 main session
 - **不要**把 `total_sleep_hours` 当作"昨晚睡了多久"，它包含了同一天所有 session（凌晨补觉 + 午睡 + 夜间主睡眠）
