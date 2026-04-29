@@ -2,6 +2,13 @@
 
 ## Changelog
 
+### 2026-04-29 (Shortcuts deep link for Export All)
+
+- iOS app 新增 custom URL scheme：`healthquantification://export-all`，可从 Shortcuts 的 Open URL action 启动 app 并触发 30 天 Export All。
+- deep link 入口复用 `ContentView.exportAll()`，和手动点击 **Export All Data** 走同一条 HealthKit fetch + FastAPI ingest 路径，不新增第二套导出逻辑。
+- 触发信号由 `HealthQuantificationIOSApp` 解析 URL 后传入 `ContentView`；如果已有导出正在运行，会忽略重复触发，避免并发 POST。
+- README 补充 Shortcuts 用法；隐私核查：本次只改 iOS app 代码和文档，不新增真实健康数据、导出文件或 token。
+
 ### 2026-04-28 (Fix `sleep daily --last-night` for after-midnight sleep starts)
 
 - 修复 `sleep daily --last-night` 的日期选择逻辑：不再简单映射到“昨天”这个自然日，而是返回**最近一段有效的夜间主睡眠**，以 functional-night 语义选择最新 lead-in sleep session。

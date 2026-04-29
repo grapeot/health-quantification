@@ -67,6 +67,14 @@ scripts/start_backend.sh
 
 5. **让 AI 用 Xcode 编译 iOS app**。在真机上运行，授权 HealthKit 访问，点击 Export All 同步数据。
 
+   iOS app 也支持从 Shortcuts 触发导出。快捷指令里添加 **Open URL** action，URL 填：
+
+   ```text
+   healthquantification://export-all
+   ```
+
+   这会打开 app，并自动执行和 **Export All Data** 按钮相同的 30 天全量同步流程。它仍然使用 app 里保存的 Server URL，所以第一次使用前需要手动打开 app 填好后端地址并完成 HealthKit 授权。
+
 第一次在新机器上编译 iOS app 时，让 AI 带你完成这几个动作：
 
 - 打开 `HealthQuantification/HealthQuantification.xcodeproj`
