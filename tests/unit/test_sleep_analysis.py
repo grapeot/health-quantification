@@ -206,10 +206,10 @@ def test_compute_analysis_summary() -> None:
 
 def test_compute_analysis_to_dict() -> None:
     samples = [
-        _make_sample("s1", "2026-03-29T22:00:00Z", "2026-03-29T22:30:00Z", "in_bed", 0),
-        _make_sample("s2", "2026-03-29T22:30:00Z", "2026-03-30T06:30:00Z", "asleep_core", 2),
+        _make_sample("s1", _local_to_utc(0, 15, 0), _local_to_utc(0, 15, 30), "in_bed", 0),
+        _make_sample("s2", _local_to_utc(0, 15, 30), _local_to_utc(0, 23, 30), "asleep_core", 2),
     ]
-    analysis = compute_analysis(samples, days=30, tz_name="America/Los_Angeles")
+    analysis = compute_analysis(samples, days=3, tz_name="America/Los_Angeles")
     d = analysis.to_dict()
     assert "daily" in d
     assert "avg_sleep_hours" in d
@@ -227,7 +227,7 @@ def test_assign_samples_to_days_cross_midnight() -> None:
     from health_quantification.analysis.sleep import assign_samples_to_days
 
     # Sleep from 22:01 PT to 06:58 PT (crosses midnight).
-    # All samples should be assigned to 2026-03-31 (bedtime date),
+    # All samples should be assigned to 2026-04-01 (wake-up date),
     # not split across 3/31 and 4/1.
     samples = [
         _make_sample("s1", "2026-04-01T05:01:48Z", "2026-04-01T05:28:17Z", "asleep_core", 2),
@@ -235,11 +235,11 @@ def test_assign_samples_to_days_cross_midnight() -> None:
         _make_sample("s3", "2026-04-01T05:30:17Z", "2026-04-01T13:58:51Z", "asleep_core", 2),
     ]
     days = assign_samples_to_days(samples, "America/Los_Angeles")
-    assert "2026-03-31" in days
-    assert len(days["2026-03-31"]) == 3
-    assert "2026-04-01" not in days
+    assert "2026-04-01" in days
+    assert len(days["2026-04-01"]) == 3
+    assert "2026-03-31" not in days
 
-    metrics = compute_day_metrics(days["2026-03-31"], "2026-03-31", "America/Los_Angeles")
+    metrics = compute_day_metrics(days["2026-04-01"], "2026-04-01", "America/Los_Angeles")
     assert metrics.bedtime == "22:01"
     assert metrics.sample_count == 3
 

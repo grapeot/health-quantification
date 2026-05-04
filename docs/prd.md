@@ -62,7 +62,7 @@ AI 是第一优先级用户。它需要稳定的命令入口、可预测的 JSON
 
 在睡眠 readout 上，CLI 需要同时支持两种明确语义：
 
-- `sleep daily --date YYYY-MM-DD`：按 sleep-day 读取，保持 bedtime 日期归属
+- `sleep daily --date YYYY-MM-DD`：按 functional_date 读取，非午睡 session 归到醒来的本地日期，午睡按 session 最早 start_at 日期归属
 - `sleep daily --last-night`：按用户语义读取最近一段夜间主睡眠，不受“午夜后才真正入睡”影响
 
 这两种语义必须被清楚区分，避免把产品里的“昨晚”错误实现成“昨天这个自然日”。

@@ -248,7 +248,7 @@ AI 完全控制分析过程。典型工作流：
 
 ### 睡眠日期归属与"昨晚睡得怎么样"
 
-**这是最容易出错的地方。** sleep 的日期归属用 session 的 bedtime 日期（session 中最早 `start_at` 的本地日期），不是 `end_at` 的本地日期。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 22:00 那天的日期上。
+**这是最容易出错的地方。** sleep 的 daily 日期归属按 session 处理：先用时间 gap 拆成完整 session，非午睡 session 归到 `functional_date`，也就是醒来的本地日期；午睡 session 保持按 session 最早 `start_at` 的本地日期归属。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 07:00 醒来的那天。
 
 **"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**最近一段夜间主睡眠**。这段睡眠通常是昨天晚上开始、今天早上结束，但也允许用户在本地时间午夜后才真正入睡。它不包括白天午睡，也不等同于“昨天这个自然日”。
 
@@ -257,16 +257,16 @@ AI 完全控制分析过程。典型工作流：
 - 如果 main session 的 bedtime 在 20:00 之前，说明它可能不是昨晚的睡眠，需要人工判断
 - "今天到现在怎么样" → vitals/lifestyle/activity 用 `--date 今天`，睡眠部分用 `--last-night` 的 main session
 - **不要**把 `total_sleep_hours` 当作"昨晚睡了多久"，它包含了同一天所有 session（凌晨补觉 + 午睡 + 夜间主睡眠）
-- **不要**直接用 SQL 查 `date(end_at)` 来做日期归属，因为会把跨午夜睡眠劈成两半
+- **不要**直接用 SQL 查 `date(start_at)` 或 `date(end_at)` 来做 sleep 日期归属；正确逻辑需要先 session segmentation，再对非午睡 session 使用 functional_date，避免跨午夜睡眠被劈成两半或归到入睡日期
 
 CLI 合同：
 ```bash
 # 查昨晚的睡眠（推荐）
 python -m health_quantification.cli sleep daily --last-night --format json
-# 注意：返回的 total_sleep_hours 包含当天所有 session，bedtime/wake_time/deep/core/rem 只反映 main session
+# 注意：--last-night 返回最近一段有效夜间 lead-in sleep；total_sleep_hours 和 stage breakdown 都只反映这段 session
 
-# 查某天的全部睡眠（含午睡）
-python -m health_quantification.cli sleep daily --date 2026-03-31 --format json
+# 查某天的全部睡眠（含午睡）。日期指 functional_date：例如 5/2 查询 5/2 早上醒来的主睡眠
+python -m health_quantification.cli sleep daily --date 2026-05-02 --format json
 ```
 
 ### 睡眠分析
