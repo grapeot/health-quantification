@@ -20,6 +20,7 @@ extension Color {
 struct ContentView: View {
     @Bindable var model: HealthKitService
     @Binding var serverURL: String
+    @Binding var exportAllDeepLinkTrigger: Int
 
     @State private var isExporting = false
     @State private var exportStatusTitle = "Idle"
@@ -54,6 +55,9 @@ struct ContentView: View {
         }
         .task {
             model.runDoctor()
+        }
+        .onChange(of: exportAllDeepLinkTrigger) { _, _ in
+            triggerExportAll()
         }
     }
 
@@ -187,11 +191,7 @@ struct ContentView: View {
                     isPressed: isExporting,
                     isDisabled: isExporting
                 ) {
-                    if !isExporting {
-                        Task {
-                            await exportAll()
-                        }
-                    }
+                    triggerExportAll()
                 }
                 .accessibilityIdentifier("exportAllButton")
             }
@@ -282,6 +282,17 @@ struct ContentView: View {
                         .stroke(Color.ideBorder.opacity(0.35), lineWidth: 1)
                 )
         )
+    }
+
+    @MainActor
+    private func triggerExportAll() {
+        guard !isExporting else {
+            return
+        }
+
+        Task {
+            await exportAll()
+        }
     }
 
     @MainActor
