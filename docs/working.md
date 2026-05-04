@@ -2,6 +2,15 @@
 
 ## Changelog
 
+### 2026-05-03 (Fix sleep daily attribution: use functional_date instead of bedtime date)
+
+- 修复 `assign_samples_to_days` 的日期归属逻辑：从 bedtime 日期（session 最早的 start_at 本地日期）改为 functional_date（醒来的那天）。
+- 语义变更："某天的睡眠"现在指那天早上醒来结束的那段睡眠（lead-in sleep），而不是那天晚上开始的那段。这与用户直觉一致——"5/2 睡得怎么样"指的是 5/2 早上醒来的那觉。
+- 跨午夜 session（如 22:00 入睡 07:00 醒来）现在归到醒来的那天（07:00 那天），而不是入睡那天（22:00 那天）。凌晨入眠的 session（如 00:30 入睡 08:00 醒来）同样归到醒来那天。
+- 午睡 session 保持原有归属（按 earliest start_at 日期）。
+- daily 视图现在和 functional_daily 视图对非午睡 session 使用相同的日期归属逻辑。
+- 更新相关测试：cross-midnight 归属测试现在断言 wake-up date。
+
 ### 2026-04-29 (Shortcuts deep link for Export All)
 
 - iOS app 新增 custom URL scheme：`healthquantification://export-all`，可从 Shortcuts 的 Open URL action 启动 app 并触发 30 天 Export All。

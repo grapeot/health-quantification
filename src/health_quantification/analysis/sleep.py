@@ -345,10 +345,21 @@ def assign_samples_to_days(
     sessions = _split_into_sessions(samples, tz)
     days: dict[str, list[dict[str, object]]] = {}
     for session in sessions:
-        earliest_start = min(
-            _to_local(str(s["start_at"]), tz) for s in session
+        start_local, end_local = _session_bounds_local(session, tz)
+        stage_hours = _session_stage_hours(session)
+        asleep_hours = _session_asleep_hours(session)
+        is_overnight = end_local.date() > start_local.date()
+        is_daytime_nap = _is_daytime_nap_session(
+            start_local=start_local,
+            end_local=end_local,
+            asleep_hours=asleep_hours,
+            stage_hours=stage_hours,
         )
-        date_str = earliest_start.date().isoformat()
+
+        if not is_daytime_nap and (is_overnight or start_local.hour < 12):
+            date_str = end_local.date().isoformat()
+        else:
+            date_str = start_local.date().isoformat()
         days.setdefault(date_str, []).extend(session)
     return days
 
@@ -430,7 +441,7 @@ def compute_analysis(
             ))
             continue
 
-        source_date, lead_in_session = max(lead_in_candidates, key=lambda item: item[1].end_local)
+        _source_date, lead_in_session = max(lead_in_candidates, key=lambda item: item[1].end_local)
         lead_in_hours_list.append(lead_in_session.sleep_hours)
         functional_daily_metrics.append(DaySleepMetrics(
             date=d,
