@@ -6,6 +6,7 @@ __pycache__/
 *.db
 docs/reports/
 docs/assets/
+**/docs/assets/
 data/raw/*
 data/exports/*
 !data/raw/.gitkeep

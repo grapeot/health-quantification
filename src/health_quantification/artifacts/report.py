@@ -121,3 +121,112 @@ def render_comparison_chart_png(
     fig.savefig(output_path, dpi=dpi, facecolor=BG, bbox_inches="tight")
     plt.close(fig)
     return output_path
+
+
+def render_monthly_comparison_chart_png(
+    previous_label: str,
+    current_label: str,
+    previous_avg: dict[str, float],
+    current_avg: dict[str, float],
+    previous_sem: dict[str, float],
+    current_sem: dict[str, float],
+    previous_n: int,
+    current_n: int,
+    output_path: Path,
+    *,
+    figsize=(12, 5.5),
+    dpi=150,
+) -> Path:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    BG = "#0f172a"
+    FG = "#e2e8f0"
+    DIM = "#475569"
+    SUBTLE = "#94a3b8"
+    BLUE = "#3b82f6"
+    PURPLE = "#8b5cf6"
+    GREEN = "#4ade80"
+    RED = "#f87171"
+
+    metrics = [
+        ("Sleep", "h", "total_sleep_hours"),
+        ("Deep", "h", "deep_sleep_hours"),
+        ("Core", "h", "core_sleep_hours"),
+        ("REM", "h", "rem_sleep_hours"),
+        ("Efficiency", "%", "sleep_efficiency"),
+    ]
+
+    fig, ax = plt.subplots(figsize=figsize, facecolor=BG)
+    ax.set_facecolor(BG)
+    ax.set_title(
+        f"Sleep Quality Comparison: {previous_label} vs {current_label}",
+        color=FG,
+        fontsize=16,
+        fontweight="bold",
+        pad=16,
+    )
+
+    x = np.arange(len(metrics))
+    width = 0.35
+    previous_vals = [previous_avg.get(key, 0.0) for _, _, key in metrics]
+    current_vals = [current_avg.get(key, 0.0) for _, _, key in metrics]
+    previous_err = [previous_sem.get(key, 0.0) for _, _, key in metrics]
+    current_err = [current_sem.get(key, 0.0) for _, _, key in metrics]
+
+    ax.bar(
+        x - width / 2,
+        previous_vals,
+        width,
+        label=f"{previous_label} (n={previous_n})",
+        color=BLUE,
+        alpha=0.8,
+        yerr=previous_err,
+        capsize=4,
+        ecolor=SUBTLE,
+        error_kw={"elinewidth": 1},
+    )
+    ax.bar(
+        x + width / 2,
+        current_vals,
+        width,
+        label=f"{current_label} (n={current_n})",
+        color=PURPLE,
+        alpha=0.8,
+        yerr=current_err,
+        capsize=4,
+        ecolor=SUBTLE,
+        error_kw={"elinewidth": 1},
+    )
+
+    for i, (_, unit, _) in enumerate(metrics):
+        diff = current_vals[i] - previous_vals[i]
+        diff_str = f"+{diff:.2f}{unit}" if diff >= 0 else f"{diff:.2f}{unit}"
+        color = GREEN if diff >= 0 else RED
+        y = max(previous_vals[i] + previous_err[i], current_vals[i] + current_err[i])
+        pad = 0.35 if unit == "%" else 0.12
+        ax.text(i, y + pad, diff_str, ha="center", fontsize=10, color=color, fontweight="bold")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([name for name, _, _ in metrics], color=FG, fontsize=11)
+    ax.legend(loc="upper right", fontsize=9, facecolor=BG, edgecolor="#1e293b", labelcolor=DIM)
+    ax.tick_params(colors=DIM)
+    for spine in ax.spines.values():
+        spine.set_color("#1e293b")
+
+    ax.text(
+        0.01,
+        -0.14,
+        "Error bars show SEM across functional-day overnight sleep records.",
+        transform=ax.transAxes,
+        color=SUBTLE,
+        fontsize=9,
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(pad=2)
+    fig.savefig(output_path, dpi=dpi, facecolor=BG, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
