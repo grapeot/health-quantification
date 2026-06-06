@@ -85,6 +85,8 @@ scripts/start_backend.sh
 
 启动后端后，iOS app 里的 Server URL 不要填 `localhost`。请填写你的 Mac 在同一个 Tailscale 网络下的地址，例如 `http://100.x.x.x:7996`。
 
+更完整的首次真机调试检查清单见 [`docs/first_time_ios_developer.md`](docs/first_time_ios_developer.md)，覆盖开发者模式、Xcode 账号、签名、Bundle Identifier、Server URL、防火墙和端口一致性。
+
 6. **让 AI 做分析**。告诉它你想要什么（比如"帮我分析过去 30 天的综合健康状况"），它会：
    - 调用 CLI 获取各类型 JSON 数据
    - 自行决定分析角度（趋势、异常、交叉关联等）
