@@ -49,7 +49,6 @@ class DaySleepMetrics:
     nap_hours: float = 0.0
     has_nap: bool = False
     sessions: list[SleepSessionMetrics] | None = None
-    lead_in_sleep: SleepSessionMetrics | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -68,9 +67,7 @@ class SleepAnalysisSummary:
     avg_core_hours: float
     avg_rem_hours: float
     avg_efficiency: float | None
-    avg_lead_in_sleep_hours: float
     daily: list[DaySleepMetrics]
-    functional_daily: list[DaySleepMetrics]
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -224,21 +221,6 @@ def _build_session_metrics(
     return session_metrics
 
 
-def _lead_in_sleep_for_date(
-    *,
-    session_metrics: list[SleepSessionMetrics],
-    date_str: str,
-) -> SleepSessionMetrics | None:
-    candidates = [
-        session
-        for session in session_metrics
-        if session.functional_date == date_str and session.session_type != "nap"
-    ]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda session: session.end_local)
-
-
 def compute_day_metrics(
     samples: list[dict[str, object]],
     date_str: str,
@@ -312,7 +294,6 @@ def compute_day_metrics(
     unspecified = main_stage_hours.get("asleep_unspecified", 0.0)
 
     is_nap = any(session.session_type == "nap" for session in session_metrics)
-    lead_in_sleep = _lead_in_sleep_for_date(session_metrics=session_metrics, date_str=date_str)
 
     return DaySleepMetrics(
         date=date_str,
@@ -333,7 +314,6 @@ def compute_day_metrics(
         nap_hours=nap_hours,
         has_nap=is_nap,
         sessions=session_metrics,
-        lead_in_sleep=lead_in_sleep,
     )
 
 
@@ -376,13 +356,11 @@ def compute_analysis(
     all_dates = [(start_date + timedelta(days=i)).isoformat() for i in range(days)]
 
     daily_metrics: list[DaySleepMetrics] = []
-    functional_daily_metrics: list[DaySleepMetrics] = []
     sleep_hours_list: list[float] = []
     efficiency_list: list[float] = []
     deep_list: list[float] = []
     core_list: list[float] = []
     rem_list: list[float] = []
-    lead_in_hours_list: list[float] = []
 
     for d in all_dates:
         day_samples = days_map.get(d, [])
@@ -394,7 +372,7 @@ def compute_analysis(
                 sleep_efficiency=None,
                 deep_sleep_hours=0.0, core_sleep_hours=0.0,
                 rem_sleep_hours=0.0, awake_hours=0.0,
-                unspecified_hours=0.0, sample_count=0, nap_hours=0.0, has_nap=False, sessions=[], lead_in_sleep=None,
+                unspecified_hours=0.0, sample_count=0, nap_hours=0.0, has_nap=False, sessions=[],
             ))
             continue
 
@@ -418,56 +396,6 @@ def compute_analysis(
     avg_core = round(sum(core_list) / len(core_list), 2) if core_list else 0.0
     avg_rem = round(sum(rem_list) / len(rem_list), 2) if rem_list else 0.0
 
-    sessions_with_source: list[tuple[str, SleepSessionMetrics]] = []
-    for metrics in daily_metrics:
-        for session in metrics.sessions or []:
-            sessions_with_source.append((metrics.date, session))
-
-    for d in all_dates:
-        lead_in_candidates = [
-            (source_date, session)
-            for source_date, session in sessions_with_source
-            if session.functional_date == d and session.session_type != "nap"
-        ]
-        if not lead_in_candidates:
-            functional_daily_metrics.append(DaySleepMetrics(
-                date=d, timezone=tz_name,
-                bedtime=None, wake_time=None,
-                total_sleep_hours=0.0, main_sleep_hours=0.0, additional_sleep_hours=0.0, total_in_bed_hours=0.0,
-                sleep_efficiency=None,
-                deep_sleep_hours=0.0, core_sleep_hours=0.0,
-                rem_sleep_hours=0.0, awake_hours=0.0,
-                unspecified_hours=0.0, sample_count=0, nap_hours=0.0, has_nap=False, sessions=[], lead_in_sleep=None,
-            ))
-            continue
-
-        _source_date, lead_in_session = max(lead_in_candidates, key=lambda item: item[1].end_local)
-        lead_in_hours_list.append(lead_in_session.sleep_hours)
-        functional_daily_metrics.append(DaySleepMetrics(
-            date=d,
-            timezone=tz_name,
-            bedtime=lead_in_session.start_local[11:16],
-            wake_time=lead_in_session.end_local[11:16],
-            total_sleep_hours=lead_in_session.sleep_hours,
-            main_sleep_hours=lead_in_session.sleep_hours,
-            additional_sleep_hours=0.0,
-            total_in_bed_hours=lead_in_session.in_bed_hours,
-            sleep_efficiency=round((lead_in_session.sleep_hours / lead_in_session.in_bed_hours) * 100, 1)
-            if lead_in_session.in_bed_hours > 0 else None,
-            deep_sleep_hours=lead_in_session.deep_sleep_hours,
-            core_sleep_hours=lead_in_session.core_sleep_hours,
-            rem_sleep_hours=lead_in_session.rem_sleep_hours,
-            awake_hours=lead_in_session.awake_hours,
-            unspecified_hours=lead_in_session.unspecified_hours,
-            sample_count=lead_in_session.sample_count,
-            nap_hours=0.0,
-            has_nap=False,
-            sessions=[lead_in_session],
-            lead_in_sleep=lead_in_session,
-        ))
-
-    avg_lead_in_sleep = round(sum(lead_in_hours_list) / len(lead_in_hours_list), 2) if lead_in_hours_list else 0.0
-
     bedtimes: list[str] = [
         m.bedtime for m in daily_metrics if m.bedtime and m.main_sleep_hours >= 3.0
     ]
@@ -490,9 +418,7 @@ def compute_analysis(
         avg_core_hours=avg_core,
         avg_rem_hours=avg_rem,
         avg_efficiency=avg_eff,
-        avg_lead_in_sleep_hours=avg_lead_in_sleep,
         daily=daily_metrics,
-        functional_daily=functional_daily_metrics,
     )
 
 

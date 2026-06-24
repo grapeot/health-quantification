@@ -117,9 +117,6 @@ def test_compute_day_metrics_main_sleep_and_afternoon_nap() -> None:
     assert metrics.nap_hours == 2.25
     assert metrics.additional_sleep_hours == 0.0
     assert metrics.has_nap is True
-    assert metrics.lead_in_sleep is not None
-    assert metrics.lead_in_sleep.sleep_hours == 3.7
-    assert metrics.lead_in_sleep.session_type == "main"
     assert metrics.sessions is not None
     assert [session.session_type for session in metrics.sessions] == ["main", "nap"]
     assert metrics.sessions[0].start_local == "2026-03-31T02:03:00-07:00"
@@ -278,12 +275,9 @@ def test_compute_day_metrics_separates_additional_sleep_from_nap() -> None:
     assert metrics.total_sleep_hours == 13.95
     assert metrics.sessions is not None
     assert [session.session_type for session in metrics.sessions] == ["additional_sleep", "nap", "main"]
-    assert metrics.lead_in_sleep is not None
-    assert metrics.lead_in_sleep.sleep_hours == 3.7
-    assert metrics.lead_in_sleep.session_type == "additional_sleep"
 
 
-def test_compute_analysis_functional_daily_captures_bad_night() -> None:
+def test_compute_analysis_daily_captures_fragmented_night() -> None:
     tz = ZoneInfo("America/Los_Angeles")
     base_date = datetime.now(tz).date() - timedelta(days=2)
     second_date = base_date + timedelta(days=1)
@@ -292,15 +286,15 @@ def test_compute_analysis_functional_daily_captures_bad_night() -> None:
         _make_sample("a2", _local_to_utc(0, 3, 33), _local_to_utc(0, 4, 33), "asleep_deep", 3),
         _make_sample("a3", _local_to_utc(0, 4, 33), _local_to_utc(0, 5, 45), "asleep_rem", 4),
         _make_sample("b1", _local_to_utc(0, 12, 41), _local_to_utc(0, 14, 56), "asleep_unspecified", 5),
-        _make_sample("c1", _local_to_utc(0, 22, 1), _local_to_utc(0, 23, 1), "asleep_core", 2),
-        _make_sample("c2", _local_to_utc(0, 23, 1), _local_to_utc(1, 6, 1), "asleep_rem", 4),
+        _make_sample("c1", _local_to_utc(0, 22, 1), _local_to_utc(1, 6, 1), "asleep_core", 2),
         _make_sample("d1", _local_to_utc(1, 23, 10), _local_to_utc(2, 6, 30), "asleep_core", 2),
     ]
     analysis = compute_analysis(samples, days=3, tz_name="America/Los_Angeles")
-    functional_by_date = {day.date: day for day in analysis.functional_daily}
-    first_lead_in = functional_by_date[base_date.isoformat()].lead_in_sleep
-    second_lead_in = functional_by_date[second_date.isoformat()].lead_in_sleep
-    assert first_lead_in is not None
-    assert first_lead_in.sleep_hours == 3.7
-    assert second_lead_in is not None
-    assert second_lead_in.sleep_hours == 8.0
+    daily_by_date = {day.date: day for day in analysis.daily}
+    first_day = daily_by_date[base_date.isoformat()]
+    second_day = daily_by_date[second_date.isoformat()]
+    assert first_day.sample_count > 0
+    assert first_day.main_sleep_hours == 3.7
+    assert first_day.nap_hours == 2.25
+    assert second_day.sample_count > 0
+    assert second_day.main_sleep_hours == 8.0

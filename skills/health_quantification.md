@@ -272,20 +272,21 @@ AI 完全控制分析过程。典型工作流：
 
 **这是最容易出错的地方。** sleep 的 daily 日期归属按 session 处理：先用时间 gap 拆成完整 session，非午睡 session 归到 `functional_date`，也就是醒来的本地日期；午睡 session 保持按 session 最早 `start_at` 的本地日期归属。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 07:00 醒来的那天。
 
-**"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**最近一段夜间主睡眠**。这段睡眠通常是昨天晚上开始、今天早上结束，但也允许用户在本地时间午夜后才真正入睡。它不包括白天午睡，也不等同于“昨天这个自然日”。
+**"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**最近一段夜间睡眠所在的功能日**。这段睡眠通常是昨天晚上开始、今天早上结束，但也允许用户在本地时间午夜后才真正入睡。CLI `--last-night` 返回该功能日的完整 day metrics，包含所有 sessions（主睡眠 + 补觉 + 午睡），不从中选一个代表。AI 看到 sessions 数组后自行判断是否碎片化。
 
 具体规则：
-- "昨晚睡得怎么样" → 用 `sleep daily --last-night`，它会返回**最近一段有效夜间主睡眠**，但**只看 main session 的指标**（bedtime、wake_time、deep/core/rem），忽略 `total_sleep_hours` 和 `nap_hours`（那里面混了同一天其他 session）
+- "昨晚睡得怎么样" → 用 `sleep daily --last-night`，它返回最近有夜间睡眠的 functional_date 的完整 day metrics（含全部 sessions）
+- headline 数字（bedtime、wake_time、total_sleep_hours）在多 session 情况下可能不直观，AI 应优先看 `sessions` 数组里的每段 session 指标
 - 如果 main session 的 bedtime 在 20:00 之前，说明它可能不是昨晚的睡眠，需要人工判断
-- "今天到现在怎么样" → vitals/lifestyle/activity 用 `--date 今天`，睡眠部分用 `--last-night` 的 main session
-- **不要**把 `total_sleep_hours` 当作"昨晚睡了多久"，它包含了同一天所有 session（凌晨补觉 + 午睡 + 夜间主睡眠）
+- "今天到现在怎么样" → vitals/lifestyle/activity 用 `--date 今天`，睡眠部分用 `--last-night`
+- **不要**把 `total_sleep_hours` 当作"昨晚睡了多久"的唯一指标，它包含了同一天所有 session（主睡眠 + 补觉 + 午睡）
 - **不要**直接用 SQL 查 `date(start_at)` 或 `date(end_at)` 来做 sleep 日期归属；正确逻辑需要先 session segmentation，再对非午睡 session 使用 functional_date，避免跨午夜睡眠被劈成两半或归到入睡日期
 
 CLI 合同：
 ```bash
 # 查昨晚的睡眠（推荐）
 python -m health_quantification.cli sleep daily --last-night --format json
-# 注意：--last-night 返回最近一段有效夜间 lead-in sleep；total_sleep_hours 和 stage breakdown 都只反映这段 session
+# --last-night 返回最近有夜间睡眠的 functional_date 的完整 day metrics，含全部 sessions
 
 # 查某天的全部睡眠（含午睡）。日期指 functional_date：例如 5/2 查询 5/2 早上醒来的主睡眠
 python -m health_quantification.cli sleep daily --date 2026-05-02 --format json
