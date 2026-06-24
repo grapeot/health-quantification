@@ -38,7 +38,7 @@ def load_sleep_analysis(days: int = 60) -> dict[str, object]:
 
 
 def functional_sleep_days(payload: dict[str, object]) -> list[dict[str, object]]:
-    raw_days = payload.get("functional_daily")
+    raw_days = payload.get("daily")
     if not isinstance(raw_days, list):
         return []
 

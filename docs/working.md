@@ -2,6 +2,14 @@
 
 ## Changelog
 
+### 2026-06-24 (Remove lead_in_sleep and functional_daily; --last-night returns full day)
+
+- 移除 `DaySleepMetrics.lead_in_sleep` 字段、`SleepAnalysisSummary.functional_daily` 和 `avg_lead_in_sleep_hours`。
+- `sleep daily --last-night` 不再从夜间睡眠中选一个"代表 session"返回，而是返回最近有夜间睡眠的 functional_date 的完整 day metrics（含全部 sessions）。消费者（AI 或人）看到所有 session 后可以自行判断碎片化情况。
+- 根因：CLI 试图替消费者做选择（选最长的、选最近的），但这些压缩在多 session 场景下必然丢信息。昨晚 23:41–03:42 的 4h 主睡眠 + 06:11–07:30 的 1.3h 补觉，旧版 `--last-night` 只返回了 1.3h 补觉那段。
+- `sleep_monthly_comparison.py` 从 `functional_daily` 切换到 `daily`。
+- 测试更新：移除 lead_in_sleep/functiona_daily 断言；`--last-night` 测试断言现在包含所有 sessions。
+
 ### 2026-05-03 (Fix sleep daily attribution: use functional_date instead of bedtime date)
 
 - 修复 `assign_samples_to_days` 的日期归属逻辑：从 bedtime 日期（session 最早的 start_at 本地日期）改为 functional_date（醒来的那天）。

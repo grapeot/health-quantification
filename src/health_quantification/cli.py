@@ -251,42 +251,20 @@ def _compute_last_night_metrics(
         today = datetime.now(tz).date().isoformat()
         return compute_day_metrics([], today, tz_name)
 
-    candidates: list[tuple[datetime, str, SleepSessionMetrics]] = []
+    overnight_sessions: list[tuple[str, SleepSessionMetrics]] = []
     for date_str, day_samples in days_map.items():
         metrics = compute_day_metrics(day_samples, date_str, tz_name)
         for session in metrics.sessions or []:
             if session.session_type == "nap" or session.functional_date is None:
                 continue
-            end_local = datetime.fromisoformat(session.end_local)
-            candidates.append((end_local, session.functional_date, session))
+            overnight_sessions.append((session.functional_date, session))
 
-    if not candidates:
+    if not overnight_sessions:
         latest_date = max(days_map)
         return compute_day_metrics(days_map.get(latest_date, []), latest_date, tz_name)
 
-    _, target_date, lead_in_session = max(candidates, key=lambda item: item[0])
-    return DaySleepMetrics(
-        date=target_date,
-        timezone=tz_name,
-        bedtime=lead_in_session.start_local[11:16],
-        wake_time=lead_in_session.end_local[11:16],
-        total_sleep_hours=lead_in_session.sleep_hours,
-        main_sleep_hours=lead_in_session.sleep_hours,
-        additional_sleep_hours=0.0,
-        total_in_bed_hours=lead_in_session.in_bed_hours,
-        sleep_efficiency=round((lead_in_session.sleep_hours / lead_in_session.in_bed_hours) * 100, 1)
-        if lead_in_session.in_bed_hours > 0 else None,
-        deep_sleep_hours=lead_in_session.deep_sleep_hours,
-        core_sleep_hours=lead_in_session.core_sleep_hours,
-        rem_sleep_hours=lead_in_session.rem_sleep_hours,
-        awake_hours=lead_in_session.awake_hours,
-        unspecified_hours=lead_in_session.unspecified_hours,
-        sample_count=lead_in_session.sample_count,
-        nap_hours=0.0,
-        has_nap=False,
-        sessions=[lead_in_session],
-        lead_in_sleep=lead_in_session,
-    )
+    target_date = max(s.functional_date for _, s in overnight_sessions if s.functional_date is not None)
+    return compute_day_metrics(days_map.get(target_date, []), target_date, tz_name)
 
 
 def _run_metric_command(
@@ -435,7 +413,6 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Avg sleep: {analysis.avg_sleep_hours}h | Deep: {analysis.avg_deep_hours}h | Core: {analysis.avg_core_hours}h | REM: {analysis.avg_rem_hours}h"
             )
-            print(f"Avg lead-in sleep: {analysis.avg_lead_in_sleep_hours}h")
             if analysis.avg_bedtime:
                 print(f"Avg bedtime: {analysis.avg_bedtime} | Avg wake: {analysis.avg_wake_time}")
             if analysis.avg_efficiency:
@@ -447,16 +424,6 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 else:
                     print(f"  {day.date}: no data")
-            print("Functional days:")
-            for day in analysis.functional_daily:
-                if day.lead_in_sleep is not None:
-                    print(
-                        f"  {day.date}: lead-in={day.lead_in_sleep.sleep_hours}h "
-                        f"({day.lead_in_sleep.start_local} -> {day.lead_in_sleep.end_local}) "
-                        f"source_session={day.lead_in_sleep.session_type}"
-                    )
-                else:
-                    print(f"  {day.date}: no lead-in sleep")
         return 0
 
     if args.command == "sleep" and args.sleep_command == "daily":
@@ -490,11 +457,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             if metrics.sleep_efficiency:
                 print(f"Efficiency: {metrics.sleep_efficiency}%")
-            if metrics.lead_in_sleep is not None:
-                print(
-                    f"Lead-in sleep for {metrics.date}: {metrics.lead_in_sleep.sleep_hours}h "
-                    f"({metrics.lead_in_sleep.start_local} -> {metrics.lead_in_sleep.end_local})"
-                )
             _print_sleep_sessions(metrics)
         return 0
 

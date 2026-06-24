@@ -203,7 +203,7 @@ def test_sleep_cli_daily_outputs_sessions(tmp_path, monkeypatch, capsys) -> None
     assert [session["session_type"] for session in payload["sessions"]] == ["main", "nap"]
 
 
-def test_sleep_cli_analyze_outputs_functional_daily(tmp_path, monkeypatch, capsys) -> None:
+def test_sleep_cli_analyze_outputs_daily(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "cli_sleep_analyze.db"
     monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
     initialize_database(db_path)
@@ -263,10 +263,10 @@ def test_sleep_cli_analyze_outputs_functional_daily(tmp_path, monkeypatch, capsy
 
     assert main(["sleep", "analyze", "--days", "3", "--format", "json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert "functional_daily" in payload
-    functional = {day["date"]: day for day in payload["functional_daily"]}
-    assert functional[base_date.isoformat()]["lead_in_sleep"]["sleep_hours"] == 3.7
-    assert functional[second_date.isoformat()]["lead_in_sleep"]["sleep_hours"] == 8.0
+    assert "daily" in payload
+    daily = {day["date"]: day for day in payload["daily"]}
+    assert daily[base_date.isoformat()]["main_sleep_hours"] == 3.7
+    assert daily[second_date.isoformat()]["main_sleep_hours"] == 8.0
 
 
 def test_sleep_cli_last_night_uses_latest_functional_sleep(tmp_path, monkeypatch, capsys) -> None:
@@ -342,10 +342,12 @@ def test_sleep_cli_last_night_uses_latest_functional_sleep(tmp_path, monkeypatch
     assert payload["date"] == "2026-04-27"
     assert payload["bedtime"] == "00:02"
     assert payload["main_sleep_hours"] == 6.75
-    assert payload["sample_count"] == 3
-    assert payload["nap_hours"] == 0.0
-    assert len(payload["sessions"]) == 1
-    assert payload["sessions"][0]["session_type"] == "main"
+    assert payload["sample_count"] == 4
+    assert payload["nap_hours"] == 1.0
+    assert len(payload["sessions"]) == 2
+    session_types = [s["session_type"] for s in payload["sessions"]]
+    assert "main" in session_types
+    assert "nap" in session_types
 
 
 def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, monkeypatch, capsys) -> None:
