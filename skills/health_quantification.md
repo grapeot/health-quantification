@@ -101,6 +101,17 @@ workout_type 为 Apple Health `HKWorkoutActivityType` 名称（如 `fitnessGamin
 - HealthKit 时间戳是 UTC，分析时需转换到用户时区（默认 `America/Los_Angeles`）
 - 分析直接读 SQLite，**不需要后端运行**。如果今天或昨天没有数据，提醒用户先打开 iOS app 同步
 
+## 数据 freshness 与 iOS client capability
+
+在支持 `health_quantification.export_all` 的 OpenCode iOS Car Mode 中，不要默认要求用户手工打开 Health Quantification。先用 `sleep daily --last-night --format json` 或目标类别的 daily/analyze 命令检查完成任务所需数据。
+
+- 数据已覆盖用户要求的时间段：直接分析，不请求导出。
+- 数据缺失或尚未覆盖最近一晚：返回一个 `health_quantification.export_all` client action，并说明需要同步哪段数据。
+- callback continuation 已声明本次 export 完成：重新读取 CLI 数据并继续原任务，不得再次请求相同 export 形成循环。
+- 当前 client 没有声明该 capability，或调用失败/过期：fallback 到提醒用户打开 iOS app，确认 Server URL 和 HealthKit 授权后执行 Export All。
+
+模型只请求稳定 capability 名和面向用户的 reason；不得生成 callback URL、Server URL、session ID 或任意 App URL。Health Quantification provider contract 见 `docs/ios_client_export_rfc.md`。
+
 ## CLI 合同
 
 ### 查询

@@ -75,6 +75,14 @@ scripts/start_backend.sh
 
    这会打开 app，并自动执行和 **Export All Data** 按钮相同的 30 天全量同步流程。它仍然使用 app 里保存的 Server URL，所以第一次使用前需要手动打开 app 填好后端地址并完成 HealthKit 授权。
 
+   支持 client capability 的 OpenCode iOS 还可以构造带一次性 callback 的 URL，在同步完成后自动回到原 Car Mode session：
+
+   ```text
+   healthquantification://export-all?callback=<percent-encoded-opencode-callback>
+   ```
+
+   callback 必须由 OpenCode 生成；不要手工复用。Health Quantification 只返回同步状态、样本总计数和失败类别，不把健康样本放进 URL。正式 provider contract 见 [`docs/ios_client_export_rfc.md`](docs/ios_client_export_rfc.md)。
+
 第一次在新机器上编译 iOS app 时，让 AI 带你完成这几个动作：
 
 - 打开 `HealthQuantification/HealthQuantification.xcodeproj`

@@ -11,14 +11,16 @@ import SwiftUI
 struct HealthQuantificationIOSApp: App {
     @AppStorage("serverURL") private var serverURL = "http://localhost:7996"
     @State private var model = HealthKitService()
-    @State private var exportAllDeepLinkTrigger = 0
+    @State private var exportRuntime = HealthExportRuntime()
+    @State private var exportCommands: [HealthExportCommand] = []
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 model: model,
+                exportRuntime: $exportRuntime,
                 serverURL: $serverURL,
-                exportAllDeepLinkTrigger: $exportAllDeepLinkTrigger
+                exportCommands: $exportCommands
             )
             .onOpenURL { url in
                 handleDeepLink(url)
@@ -27,18 +29,8 @@ struct HealthQuantificationIOSApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
-        guard url.scheme == "healthquantification" else {
-            return
-        }
-
-        let normalizedAction = [url.host, url.path]
-            .compactMap { $0 }
-            .joined(separator: "/")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .lowercased()
-
-        if normalizedAction == "export-all" || normalizedAction == "export/all" {
-            exportAllDeepLinkTrigger += 1
+        if let command = HealthExportDeepLinkParser.parse(url) {
+            exportCommands.append(command)
         }
     }
 }
