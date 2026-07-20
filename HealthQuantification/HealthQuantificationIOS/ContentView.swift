@@ -18,11 +18,12 @@ extension Color {
 }
 
 struct ContentView: View {
+    @Environment(\.openURL) private var openURL
     @Bindable var model: HealthKitService
+    @Binding var exportRuntime: HealthExportRuntime
     @Binding var serverURL: String
-    @Binding var exportAllDeepLinkTrigger: Int
+    @Binding var exportCommands: [HealthExportCommand]
 
-    @State private var isExporting = false
     @State private var exportStatusTitle = "Idle"
     @State private var exportStatusDetail = "Waiting for a command."
     @State private var exportStatusTone: ExportStatusTone = .neutral
@@ -56,8 +57,12 @@ struct ContentView: View {
         .task {
             model.runDoctor()
         }
-        .onChange(of: exportAllDeepLinkTrigger) { _, _ in
-            triggerExportAll()
+        .onChange(of: exportCommands) { _, commands in
+            guard !commands.isEmpty else { return }
+            exportCommands.removeAll()
+            for command in commands {
+                triggerExportAll(command: command)
+            }
         }
     }
 
@@ -184,14 +189,14 @@ struct ContentView: View {
                 .accessibilityIdentifier("requestHealthAccessButton")
 
                 ActionButton(
-                    title: isExporting ? "Exporting 30-Day Snapshot" : "Export All Data",
-                    subtitle: isExporting ? "Collecting and uploading sleep, vitals, body, lifestyle, activity, and workout samples" : "Send the last 30 days of samples to the configured backend",
-                    icon: isExporting ? "arrow.triangle.2.circlepath" : "square.and.arrow.up",
+                    title: exportRuntime.isExporting ? "Exporting 30-Day Snapshot" : "Export All Data",
+                    subtitle: exportRuntime.isExporting ? "Collecting and uploading sleep, vitals, body, lifestyle, activity, and workout samples" : "Send the last 30 days of samples to the configured backend",
+                    icon: exportRuntime.isExporting ? "arrow.triangle.2.circlepath" : "square.and.arrow.up",
                     style: .primary,
-                    isPressed: isExporting,
-                    isDisabled: isExporting
+                    isPressed: exportRuntime.isExporting,
+                    isDisabled: exportRuntime.isExporting
                 ) {
-                    triggerExportAll()
+                    triggerExportAll(command: nil)
                 }
                 .accessibilityIdentifier("exportAllButton")
             }
@@ -285,118 +290,75 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func triggerExportAll() {
-        guard !isExporting else {
+    private func triggerExportAll(command: HealthExportCommand?) {
+        switch exportRuntime.begin(commandID: command?.id) {
+        case .duplicate:
             return
-        }
-
-        Task {
-            await exportAll()
+        case .busy:
+            if let command {
+                finishCallback(for: command, result: .busy)
+            }
+            return
+        case let .start(executionID):
+            Task {
+                await exportAll(command: command, executionID: executionID)
+            }
         }
     }
 
     @MainActor
-    private func exportAll() async {
+    private func exportAll(command: HealthExportCommand?, executionID: UUID) async {
         guard let exportContext = makeExportContext() else {
+            exportRuntime.finish(executionID: executionID)
+            if let command {
+                finishCallback(for: command, result: .failed(.invalidServerURL))
+            }
             return
         }
 
-        isExporting = true
         exportStatusTitle = "Exporting"
         exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, and workout samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
-        var resultLines: [String] = []
-        var hadFailure = false
-        var hadSuccess = false
+        let result = await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient)
+            .exportAll(serverURL: exportContext.url)
 
-        do {
-            let samples = try await model.fetchSleepSamples(days: 30)
-            let response = try await ingestClient.ingestSleep(serverURL: exportContext.url, samples: samples)
-            resultLines.append("[sleep] sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
-        } catch {
-            resultLines.append("[sleep] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        do {
-            let samples = try await model.fetchVitalsSamples(days: 30)
-            let response = try await ingestClient.ingestVitals(serverURL: exportContext.url, samples: samples)
-            resultLines.append("[vitals] sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
-        } catch {
-            resultLines.append("[vitals] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        do {
-            let samples = try await model.fetchBodySamples(days: 30)
-            if samples.isEmpty {
-                resultLines.append("[body] no data")
-            } else {
-                let response = try await ingestClient.ingestBody(serverURL: exportContext.url, samples: samples)
-                resultLines.append("[body] sent \(samples.count), upserted \(response.upserted)")
-                hadSuccess = true
-            }
-        } catch {
-            resultLines.append("[body] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        do {
-            let samples = try await model.fetchLifestyleSamples(days: 30)
-            if samples.isEmpty {
-                resultLines.append("[lifestyle] no data")
-            } else {
-                let response = try await ingestClient.ingestLifestyle(serverURL: exportContext.url, samples: samples)
-                resultLines.append("[lifestyle] sent \(samples.count), upserted \(response.upserted)")
-                hadSuccess = true
-            }
-        } catch {
-            resultLines.append("[lifestyle] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        do {
-            let samples = try await model.fetchActivitySamples(days: 30)
-            let response = try await ingestClient.ingestActivity(serverURL: exportContext.url, samples: samples)
-            resultLines.append("[activity] sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
-        } catch {
-            resultLines.append("[activity] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        do {
-            let samples = try await model.fetchWorkoutSamples(days: 30)
-            let response = try await ingestClient.ingestWorkouts(serverURL: exportContext.url, samples: samples)
-            resultLines.append("[workouts] sent \(samples.count), upserted \(response.upserted)")
-            hadSuccess = true
-        } catch {
-            resultLines.append("[workouts] failed: \(error.localizedDescription)")
-            hadFailure = true
-        }
-
-        if hadSuccess && hadFailure {
+        switch result.status {
+        case .partial:
             exportStatusTitle = "Partial"
             exportStatusTone = .partial
-        } else if hadSuccess {
+        case .success:
             exportStatusTitle = "Success"
             exportStatusTone = .success
-        } else {
+        case .failed, .busy:
             exportStatusTitle = "Failed"
             exportStatusTone = .failure
         }
-        exportStatusDetail = resultLines.joined(separator: "\n")
+        exportStatusDetail = result.categoryResults.map(\.line).joined(separator: "\n")
 
-        isExporting = false
+        exportRuntime.finish(executionID: executionID)
+        if let command {
+            finishCallback(for: command, result: result)
+        }
+    }
+
+    @MainActor
+    private func finishCallback(for command: HealthExportCommand, result: HealthExportResult) {
+        guard let callback = command.callback,
+              let callbackURL = HealthExportCallbackBuilder.url(for: callback, result: result) else {
+            return
+        }
+        openURL(callbackURL) { accepted in
+            if !accepted {
+                exportStatusDetail += "\n[callback] OpenCode did not accept the return URL."
+            }
+        }
     }
 
     @MainActor
     private func makeExportContext() -> ExportContext? {
         let trimmedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmedURL), let scheme = url.scheme, let host = url.host, !scheme.isEmpty, !host.isEmpty else {
+        guard let url = HealthExportServerURLParser.parse(trimmedURL) else {
             exportStatusTitle = "Failed"
             exportStatusDetail = "Enter a valid server URL such as http://100.x.x.x:7996."
             exportStatusTone = .failure

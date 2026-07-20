@@ -2,6 +2,17 @@
 
 ## Changelog
 
+### 2026-07-19 (OpenCode iOS client capability callback)
+
+- iOS Export All deep link 从整数 trigger 升级为 typed command，继续兼容无 callback 的 `healthquantification://export-all`。
+- 新增严格受限的 OpenCode callback：只接受 `opencode://client-action-return/<43-128 character URL-safe ID>`，拒绝任意 scheme、userinfo、port、额外 path、query、fragment 和非 canonical percent encoding。
+- 把六类别导出抽到 `HealthExportCoordinator`，按 sleep、vitals、body、lifestyle、activity、workouts 顺序执行；单类失败继续后续类别并返回 aggregate success/partial/failed result。
+- callback 只返回 status、sent、upserted、failed category 和稳定 error code；不返回健康明细、Server URL、日志或自由文本错误。
+- App 入口用 command queue 保留同一 render 前连续到达的 URL；导出进入 Task 前通过 app-shared runtime 设置 single-flight 标记，多 scene duplicate 被忽略，并发不同 deep link 返回一次 `busy`，无效 Server URL 返回 `failed`。
+- 新增独立 feature PRD/RFC、parser/result/coordinator tests，并更新 README、test strategy 和 project-local skill。
+- 验证：iOS simulator `xcodebuild build` 成功；完整 `xcodebuild test` 成功。测试期间一个 cloned UI runner 首次启动被 simulator 拒绝，Xcode 后续 clone 重试通过，最终 test session 为 success。
+- 尚未完成：OpenCode consumer implementation 和双 App 真机 round trip；这两项不属于 provider PR 的自动化完成条件。
+
 ### 2026-06-24 (Remove lead_in_sleep and functional_daily; --last-night returns full day)
 
 - 移除 `DaySleepMetrics.lead_in_sleep` 字段、`SleepAnalysisSummary.functional_daily` 和 `avg_lead_in_sleep_hours`。

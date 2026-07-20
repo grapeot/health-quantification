@@ -89,6 +89,8 @@ CLI 只负责 readout/analytics，FastAPI 只负责 ingestion。即使 FastAPI �
 
 ## 当前范围
 
+Health Quantification iOS 作为 OpenCode client capability provider 的产品要求单独维护在 [`ios_client_export_prd.md`](ios_client_export_prd.md)。主 PRD 只保留项目整体边界，避免把跨 App callback 细节混入健康数据产品定义。
+
 ### Python 侧
 
 - `health_quantification.config`：读取环境变量和路径配置（含 server_host / server_port）

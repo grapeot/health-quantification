@@ -24,6 +24,8 @@
 
 - `HealthKitServiceTests.swift`：HealthKit stage → ingestion stage 映射
 - `IngestClientTests.swift`：`SleepSampleRecord` / `IngestEnvelope` JSON 编解码，验证与 FastAPI Pydantic 模型兼容
+- `HealthExportCommandTests.swift`：旧 deep link 兼容、严格 callback allowlist、success/partial/failed/busy 返回合同与结果聚合
+- `HealthExportCoordinatorTests.swift`：六类别顺序执行、空类别处理、单类失败后继续和 partial 聚合
 
 通过 `xcodebuild test -scheme HealthQuantificationIOS` 运行。
 
@@ -56,8 +58,13 @@ Python：
 iOS（需 Xcode + 真机或 simulator）：
 ```bash
 cd HealthQuantification
-xcodebuild test -scheme HealthQuantificationIOS -destination 'platform=iOS,name=My iPhone'
+xcodebuild build -project HealthQuantification.xcodeproj -scheme HealthQuantificationIOS -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project HealthQuantification.xcodeproj -scheme HealthQuantificationIOS -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' CODE_SIGNING_ALLOWED=NO
 ```
+
+Build 和 test 必须顺序运行。Simulator 覆盖 pure contract、coordinator 和 UI regression；真实 HealthKit 数据、两个 App 的 custom URL 冷/热启动及自动回跳仍需真机验收。
+
+Callback contract 的自动化验收至少包括：错误 scheme/host、userinfo、port、额外 path、callback 自带 query/fragment、非 canonical percent encoding、未知外层 query、空 callback 和短 ID 均拒绝；合法结果只出现 RFC allowlist 字段，不能包含健康样本或自由文本错误。`HealthExportRuntime` 的 pure test 验证多 scene 重复 command 只 claim 一次、并发不同 command 只产生一次 busy decision。
 
 ## 手工 smoke checks
 

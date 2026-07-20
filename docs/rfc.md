@@ -6,6 +6,8 @@ Phase 1 覆盖项目骨架、Python 主体、FastAPI ingestion server、iOS 采�
 
 Phase 2 在 Phase 1 基础上扩展数据采集范围：生命体征（HR、HRV、呼吸、血氧）、活动（步数）、体测（体重、血糖、血压）、生活方式（咖啡因、酒精）。
 
+OpenCode iOS 发起 Export All 并 callback 的 provider contract 单独维护在 [`ios_client_export_rfc.md`](ios_client_export_rfc.md)。
+
 ## 架构
 
 项目采用以 SQLite 为中心的架构：
