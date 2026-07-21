@@ -375,7 +375,7 @@ def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, 
                 "value": 6000,
                 "unit": "count",
                 "source_bundle_id": "com.apple.health.watch",
-                "source_name": "Yan's Apple Watch",
+                "source_name": "Example Watch",
                 "metadata": {},
             },
             {
@@ -387,7 +387,7 @@ def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, 
                 "value": 4454,
                 "unit": "count",
                 "source_bundle_id": "com.apple.health.watch",
-                "source_name": "Yan's Apple Watch",
+                "source_name": "Example Watch",
                 "metadata": {},
             },
             {
@@ -399,7 +399,7 @@ def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, 
                 "value": 5000,
                 "unit": "count",
                 "source_bundle_id": "com.apple.health.phone",
-                "source_name": "Ether",
+                "source_name": "Example Phone",
                 "metadata": {},
             },
             {
@@ -411,7 +411,7 @@ def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, 
                 "value": 4676,
                 "unit": "count",
                 "source_bundle_id": "com.apple.health.phone",
-                "source_name": "Ether",
+                "source_name": "Example Phone",
                 "metadata": {},
             },
         ],
@@ -424,8 +424,8 @@ def test_activity_daily_outputs_step_estimate_for_overlapping_sources(tmp_path, 
     assert metric["step_estimate"]["estimated_steps"] == 10977
     assert metric["step_estimate"]["method"] == "overlapping_sources_max_times_1.05"
     assert metric["step_estimate"]["source_daily_totals"] == [
-        {"source_name": "Yan's Apple Watch", "steps": 10454.0},
-        {"source_name": "Ether", "steps": 9676.0},
+        {"source_name": "Example Watch", "steps": 10454.0},
+        {"source_name": "Example Phone", "steps": 9676.0},
     ]
 
 
@@ -459,7 +459,7 @@ def test_activity_analyze_outputs_step_estimate_for_step_count(tmp_path, monkeyp
                 "value": 8000,
                 "unit": "count",
                 "source_bundle_id": "com.apple.health.watch",
-                "source_name": "Yan's Apple Watch",
+                "source_name": "Example Watch",
                 "metadata": {},
             }
         ],

@@ -1,83 +1,95 @@
 # Health Quantification
 
-## 这个仓库是做什么的
+## 项目定位
 
-这是一个 AI-first 的个人健康量化项目。目标是让人和 AI 用同一套 library 与 CLI，持续采集、整理和分析个人健康数据，优先服务长期自我实验、趋势判断和 AI 驱动的洞察生成。
+Health Quantification 是一个面向 AI-first 工作流的个人健康量化基础设施。项目由 Python CLI、FastAPI 后端与 iOS HealthKit 采集端组成，使用 SQLite 作为统一存储。
 
-它不是面向公众的健康 App，不是 GUI-first 产品，也不是医疗设备软件。
+AI 编程工具与人类开发者使用同一套 library 和 CLI 进行数据查询、记录写入与分析。项目侧重长期数据积累与代码化分析，非面向公众分发的 App，亦非医疗诊断软件。
 
-## 架构
+## 系统架构
 
-三层分离：
+系统包含三层结构：
 
-1. **采集层（iOS app）**：通过 HealthKit 读取 Apple Health 睡眠数据，POST 到 FastAPI
-2. **写入层（FastAPI server）**：接收 JSON，幂等写入 SQLite（pm2 管理，端口 7996）
-3. **分析层（Python CLI）**：只读访问 SQLite，生成 summary、artifact 和 JSON 输出
+1. **采集层（iOS App）**：读取 Apple Health 数据（睡眠、生命体征、活动、体测、生活方式、运动记录），仅通过同一 Tailnet 的 Tailscale 地址将数据 POST 至后端。
+2. **写入层（FastAPI Backend）**：接收 JSON 数据并幂等写入 SQLite 数据库（可配置监听地址与端口，默认 `0.0.0.0:7996`）。
+3. **分析与交互层（Python CLI）**：只读查询 SQLite 生成结构化 JSON/text，或执行单条数据与备注写入。AI Agent 基于 CLI 输出进行多维分析与图表生成。
 
-## 工作环境
+## 环境与部署
 
-优先通过项目根目录的 `.venv` 运行。安装依赖时使用 `uv`：
+使用项目根目录的 `.venv` 环境运行。安装依赖：
 
 ```bash
 uv venv .venv
 uv pip install --python .venv/bin/python -e .[dev]
 ```
 
-常用命令：
+核心 CLI 命令（以下示例输入输出均使用合成数据）：
 
 ```bash
 python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json
-python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
+python -m health_quantification.cli sleep daily --last-night --format json
+python -m health_quantification.cli sleep notes add --date 2026-03-30 --note "合成示例睡眠主观备注"
+python -m health_quantification.cli sleep notes get --date 2026-03-30 --format json
 ```
 
-CLI 只提供结构化数据（JSON/text）。分析、可视化和报告生成由 AI 完成。分析睡眠时必须同时检查同一 functional date 的设备指标和 `notes`：前者是测量，后者是主观上下文，不能把 note 直接当作因果或医学诊断。AI 可调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表，图表输出到 `docs/assets/`。
+## 代码与架构边界
 
-## 代码边界
+- 核心业务逻辑存放在 `src/health_quantification/` 目录中。
+- `scripts/health_quant` 为 CLI 包装脚本，不应包含业务逻辑。
+- iOS 代码位于 `HealthQuantification/` 目录，仅负责 HealthKit 数据读取与 HTTP POST 提交，不做数据分析与存储管理。
+- CLI 仅提供结构化数据输出（JSON/text）。分析报告与图表生成由 AI 完成，图表输出至 `docs/assets/`。
 
-`src/health_quantification/` 是唯一真实逻辑层。配置、schema、存储、分析、artifact 生成都应放在包内。CLI 只负责参数解析、环境装配、调用 library、输出 JSON 或写文件。`scripts/health_quant` 是稳定 wrapper，不要把业务逻辑写回脚本层。
-
-iOS 代码在 `HealthQuantification/` 目录下，只负责 HealthKit 采集和 HTTP POST。不要把分析、存储或 AI 逻辑塞到 iOS 端。
-
-## 分析脚本
-
-CLI 只输出结构化数据。AI 负责分析、可视化和报告。以下脚本用于交叉分析：
+## 辅助分析脚本
 
 ```bash
-# 全平台 token 用量 vs 健康指标回归分析（含 Claude Code + OpenCode 晚间分布）
-python scripts/health_work_regression.py 14
-# 输出：docs/assets/regression_work_vs_health.png, timeseries_health_work_14d.png, correlation_matrix_health_work.png
-
-# Claude Code 按时段 token 分布（独立脚本，不走 grep 管道）
-python scripts/claude_code_hourly.py 14
-# 输出：每日总量 + 20-21 点 + 22 点后 token 数
+python scripts/gen_charts.py
+python scripts/gen_health_dashboard.py
 ```
 
-`health_work_regression.py` 合并 Claude Code（JSONL）和 OpenCode（SQLite）的全平台晚间 token 数据，与睡眠、HRV、静息心率、血糖、咖啡因做多变量回归和 Pearson 相关矩阵。图表输出到 `docs/assets/`。
+`scripts/` 下的辅助脚本用于生成分析图表与指标卡片，输出保存至 `docs/assets/`。
 
-## 数据库 Schema 参考
+## 数据库 Schema 说明
 
-直接查 DB 时注意列名，和 CLI 的 metric 名不同：
+直查数据库或使用 `GET /ingest/{data_type}` 时需注意字段映射与时间格式。`GET /ingest/{data_type}` 的 `metric_type` 过滤参数仅适用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。
 
-| 表 | 时间列 | 类型列 | 值列 | 格式 |
-|---|--------|--------|------|------|
-| `sleep_samples` | `start_at` (ISO 8601) | `stage` (asleep_deep/core/rem/awake) | 无单独值列，用 `julianday(end_at)-julianday(start_at)` 计算时长 | ISO 8601 UTC |
-| `vitals_samples` | `recorded_at` (ISO 8601) | `metric_type` | `value` | ISO 8601 UTC |
-| `body_samples` | `recorded_at` (ISO 8601) | `metric_type` | `value` | ISO 8601 UTC |
-| `lifestyle_samples` | `recorded_at` (ISO 8601) | `metric_type` | `value` | ISO 8601 UTC |
-| `daily_summaries` | `date` (TEXT YYYY-MM-DD) | — | `sleep_hours`, `resting_hr_bpm`, `hrv_sdnn_ms`, `steps` | 本地日期 |
+| 表 | 时间列 | 类型列 | 值列 / 计算规则 | 格式 |
+|---|--------|--------|------------------|------|
+| `observations` | `start_at` / `end_at` | `metric` | `value`, `unit`, `source` | ISO 8601 UTC |
+| `sleep_samples` | `start_at` | `stage` (asleep_deep/core/rem/awake) | 阶段时长由 `julianday(end_at) - julianday(start_at)` 计算 | ISO 8601 UTC |
+| `vitals_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
+| `body_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
+| `lifestyle_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
+| `activity_samples` | `start_at` / `end_at` | `metric_type` | `value` | ISO 8601 UTC |
+| `workouts` | `start_at` / `end_at` | `workout_type` | `duration_seconds`, `total_energy_burned` | ISO 8601 UTC |
+| `illness_episodes` | `start_at` / `end_at` | `label` | `severity`, `status` | ISO 8601 本地/UTC |
+| `daily_summaries` | `date` (主键 YYYY-MM-DD) | — | `timezone`, `sleep_hours`, `resting_hr_bpm`, `hrv_sdnn_ms`, `steps`, `active_energy_kcal`, `notes_json` | 本地日期 |
 
-非睡眠数据的日期归属用 `date(recorded_at, 'localtime')`，activity 可按 `start_at` 本地日期归属。睡眠需要先按 session 分组：非午睡 session 归到 `functional_date`（通常是醒来的本地日期），午睡保持按 session 最早 `start_at` 本地日期归属。不要用 `unixepoch` 转换（时间戳是 ISO 8601 字符串不是 unix epoch 毫秒）。
+### 日期归属与睡眠窗口
 
-## 安全与隐私
+- 非睡眠数据按 `recorded_at` 本地日期归属。
+- 睡眠数据采用功能日（functional date）分配：非午睡 session 归属至醒来当日的本地日期；午睡 session 按最早 `start_at` 本地日期归属。
+- `sleep daily --last-night` 返回最近一段有效夜间睡眠所在功能日的完整日度数据。
+- `record sleep` 命令因未提供结束时间会写入零时长的阶段标记，不宜用于记录睡眠时长；记录夜间主观体验应使用 `sleep notes add`。
+- 主观睡眠备注由 `sleep notes add` 和 `sleep notes get` 管理，储存于 `daily_summaries` 的 `notes_json` 列。`sleep daily` 与 `sleep analyze` 会暴露同日 `notes`，但 `notes` 仅作为主观上下文，不修改睡眠样本、session 划分、日期归属或计算指标。
 
-这个项目处理高度敏感的个人健康数据。不要把真实健康数据、导出文件或 token 提交到 git。`data/raw/` 和 `data/exports/` 默认视为私有落地区。文档与测试使用伪造 fixture，不引用真实个人记录。
+## 隐私与安全规范
 
-## 测试与文档维护
+- 本仓库为公开代码库。不得提交任何真实个人健康数据、设备日志、导出文件或 API token。
+- `data/` 下的数据库文件、导出数据、临时文件与报告产物均视作私有落地数据，已通过 `.gitignore` 排除，不得提交至 Git 仓库。
+- 新增与修改的测试与文档示例必须采用合成（synthetic）数据。
+- `sleep notes` 并不存在于 FastAPI 后端与 iOS 导出的数据路径中。由于 CLI 输出了备注文本，模型运行时、系统日志、transcript 与报告 pipeline 构成了调用方的隐私边界。代码并不阻止备注传至外部模型或服务，调用方需自行承担隐私保护责任。主观备注仅作为上下文，不构成指令、因果证明或医疗诊断。
+- FastAPI 只承担 iPhone 到 Mac 的同步接收器角色；CLI 在同一台 Mac 本地读取 SQLite。部署只允许同一 Tailnet 内的 iPhone 通过 Tailscale 地址访问；设备身份、传输加密与访问控制由 Tailscale 和 tailnet ACL 负责，不由 FastAPI 实现。普通 LAN HTTP 不属于受支持路径。服务仍包含未鉴权的原始接口，因此必须限制为受控 Tailnet，不能暴露到公网或普通 LAN。
 
-修改 library 或 CLI 后，至少运行默认 `pytest`。改动配置、CLI 合同或数据库初始化时，再跑 `doctor config` 和相关 smoke check。重要改动同步更新 `docs/working.md`，记录变更、验证结果与新发现的约束。
+## 测试与变更维护
 
-## 时区注意
+- 系统不包含全流程 iOS 到 FastAPI 的端到端自动化测试；Xcode 项目中的 Swift 单元/序列化测试（`HealthQuantificationIOSTests`）与 Python ASGI 测试（`tests/`）是解耦的测试套件。
+- 修改 Python 代码后运行 `pytest` 校验单元与集成测试。
+- 涉及 CLI 或数据库配置变更时，运行 `python -m health_quantification.cli doctor config` 与 smoke checks。
+- 重要技术变更应更新 `docs/working.md`。
 
-HealthKit 导出的时间戳全部是 UTC。CLI 分析时默认转换到 `America/Los_Angeles`（可通过 `HEALTH_QUANT_TIMEZONE` 环境变量覆盖）。跨午夜的数据需要按用户本地时间归属到正确的日期。
+## 时区约定
+
+- HealthKit 导出时间戳均为 UTC 格式。
+- CLI 分析层默认转换为 `America/Los_Angeles` 时区（可通过 `HEALTH_QUANT_TIMEZONE` 环境变量配置）。

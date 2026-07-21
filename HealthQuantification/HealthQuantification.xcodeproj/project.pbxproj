@@ -414,8 +414,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HealthQuantificationIOS/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read Apple Health sleep data for personal analysis and AI-first summaries.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Write standardized personal health exports for your private analysis pipeline.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read sleep, vital signs, body measurements, activity, dietary, and workout data from Apple Health for local analysis.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -452,8 +451,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HealthQuantificationIOS/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read Apple Health sleep data for personal analysis and AI-first summaries.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Write standardized personal health exports for your private analysis pipeline.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read sleep, vital signs, body measurements, activity, dietary, and workout data from Apple Health for local analysis.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

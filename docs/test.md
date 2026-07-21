@@ -1,75 +1,69 @@
 # 测试策略
 
-## 目标
+## 验证目标
 
-验证三件事：Python 侧的模型/存储/HTTP 合同稳定，iOS 侧编解码与 stage 映射正确，端到端 ingestion 管道（iOS → FastAPI → SQLite）幂等且数据完整。
+测试套件旨在保障两套解耦的契约稳定性：
+1. Python 侧的数据模型、存储持久化、HTTP Ingestion 与 CLI 合同正确（通过 ASGI 与 Python 测试校验）。
+2. iOS 侧 HealthKit 类型映射、JSON 编解码与 Deep Link 命令解析符合规范（通过 Xcode Swift 单元测试校验）。
 
-## Python 测试
+系统内不存在全流程 iOS 到 FastAPI 的端到端自动化集成测试，各层测试套件保持独立解耦。
 
-### Unit tests（`tests/unit/`）
+新增与修改的测试 Fixture 必须使用独立创建的合成（Synthetic）且非标识数据，严禁依赖或读取真实个人健康数据库。
 
-纯逻辑，不依赖外部服务或真实数据：
+## Python 测试架构
 
-- `test_server_models.py`：Pydantic 模型验证（合法 payload 接受、缺字段拒绝、类型错误拒绝、未知字段拒绝）
-- `test_daily_summary.py`：日级 summary 默认结构
+### 1. 单元测试 (`tests/unit/`)
 
-### Integration tests（`tests/integration/`）
+覆盖纯逻辑计算与 Pydantic 模型校验，不依赖外部网络与服务：
 
-用临时 SQLite 验证端到端接缝，所有测试自包含，不需要跑真实 FastAPI 进程：
+- `test_server_models.py`：校验 HTTP Payload 模型合法性、缺失字段拒绝与未知字段排斥逻辑。
+- `test_daily_summary.py`：校验日级摘要计算与默认结构。
+- `test_record.py`：校验单条记录、illness episode 与 daily sleep notes 的存储合同。
+- `test_sleep_analysis.py`：校验功能日归属、session 拆分与睡眠指标计算。
 
-- `test_server.py`：HTTP 合同测试（POST 接受、幂等 upsert、日期过滤、DELETE 清理、/health、422 校验），使用 `httpx.AsyncClient` + `ASGITransport` 直接调 FastAPI app
-- `test_cli.py`：CLI smoke test
+### 2. 集成测试 (`tests/integration/`)
 
-## iOS 测试（`HealthQuantification/HealthQuantificationIOSTests/`）
+使用内存或临时文件 SQLite 数据库，校验模块间接缝：
 
-- `HealthKitServiceTests.swift`：HealthKit stage → ingestion stage 映射
-- `IngestClientTests.swift`：`SleepSampleRecord` / `IngestEnvelope` JSON 编解码，验证与 FastAPI Pydantic 模型兼容
-- `HealthExportCommandTests.swift`：旧 deep link 兼容、严格 callback allowlist、success/partial/failed/busy 返回合同与结果聚合
-- `HealthExportCoordinatorTests.swift`：六类别顺序执行、空类别处理、单类失败后继续和 partial 聚合
+- `test_server.py`：使用 `httpx.AsyncClient` 结合 `ASGITransport` 直接测试 FastAPI Endpoint 的 POST 接受、幂等 Upsert、日期过滤与 GET/DELETE 功能。
+- `test_cli.py`：校验 CLI 命令解析、结构化 JSON 输出与数据写入行为。
+- `test_cli_record.py`：校验 CLI 手动记录、illness 与 sleep notes 命令合同。
 
-通过 `xcodebuild test -scheme HealthQuantificationIOS` 运行。
+Python 侧会拒绝所有类别的空 `samples` payload；Swift coordinator 的 empty-category 行为尚未通过真实 FastAPI 端到端测试覆盖，属于已知跨层缺口。
 
-## Live integration tests
+## iOS 测试架构 (`HealthQuantification/HealthQuantificationIOSTests/`)
 
-骨架已保留，用于未来验证真实 adapter。默认 skip，只有 `HEALTH_QUANT_ENABLE_LIVE_TESTS=1` 时运行。
+- `HealthKitServiceTests.swift`：验证 HealthKit Category Value 到内部 Stage 枚举的映射。
+- `IngestClientTests.swift`：验证数据 Record 与 Ingest Envelope 的 JSON 编解码及其与后端模型的兼容性。
+- `HealthExportCommandTests.swift`：验证 Deep Link URL 解析、Callback ID 白名单限制与返回 URL 构建。
+- `HealthExportCoordinatorTests.swift`：验证六类别顺序导出与容错逻辑。
 
-## 真实数据验证（手工）
-
-iOS 真机 export 后，通过 API 确认数据完整性：
+测试通过 Xcode 或命令行运行：
 
 ```bash
-curl -s http://localhost:7996/ingest/sleep | python3 -c "
-import json, sys; data = json.load(sys.stdin)
-print(f'Total: {len(data)}, Days: {len(set(s[\"start_at\"][:10] for s in data))}')
-print(f'Stages: {dict()}')  # 检查 stage 分布是否合理
-print(f'Dupes: {len([s[\"source_id\"] for s in data]) - len(set(s[\"source_id\"] for s in data))}')
-"
+cd HealthQuantification
+xcodebuild test -project HealthQuantification.xcodeproj -scheme HealthQuantificationIOS -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' CODE_SIGNING_ALLOWED=NO
 ```
 
-已验证（2026-03-30）：813 samples, 30 天, 0 重复, stage 分布符合预期。
+## 测试运行指令
 
-## 运行方式
+（以下运行指令及命令涉及的入口均使用合成/测试示例配置，不连接默认个人数据库或已运行的个人后端）
 
-Python：
+### Python 测试
+
 ```bash
 .venv/bin/python -m pytest -v
 ```
 
-iOS（需 Xcode + 真机或 simulator）：
-```bash
-cd HealthQuantification
-xcodebuild build -project HealthQuantification.xcodeproj -scheme HealthQuantificationIOS -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' CODE_SIGNING_ALLOWED=NO
-xcodebuild test -project HealthQuantification.xcodeproj -scheme HealthQuantificationIOS -destination 'platform=iOS Simulator,id=<SIMULATOR_UDID>' CODE_SIGNING_ALLOWED=NO
-```
-
-Build 和 test 必须顺序运行。Simulator 覆盖 pure contract、coordinator 和 UI regression；真实 HealthKit 数据、两个 App 的 custom URL 冷/热启动及自动回跳仍需真机验收。
-
-Callback contract 的自动化验收至少包括：错误 scheme/host、userinfo、port、额外 path、callback 自带 query/fragment、非 canonical percent encoding、未知外层 query、空 callback 和短 ID 均拒绝；合法结果只出现 RFC allowlist 字段，不能包含健康样本或自由文本错误。`HealthExportRuntime` 的 pure test 验证多 scene 重复 command 只 claim 一次、并发不同 command 只产生一次 busy decision。
-
-## 手工 smoke checks
+### 手动 Smoke Check
 
 ```bash
-.venv/bin/python -m health_quantification.cli doctor config
-.venv/bin/python -m health_quantification.cli db init
-curl -s http://localhost:7996/health
+smoke_db="$(mktemp -d)/health_quant_smoke.db"
+HEALTH_QUANT_DB_PATH="$smoke_db" .venv/bin/python -m health_quantification.cli db init
+HEALTH_QUANT_DB_PATH="$smoke_db" .venv/bin/python -m health_quantification.cli sleep notes add --date 2040-01-02 --note "Synthetic smoke context"
 ```
+
+## 隐私与安全规范
+
+- 新增与修改的自动化测试与手动 Smoke Check 一律使用合成（synthetic）数据。
+- 测试过程中生成的临时 SQLite 文件由环境变量控制并于测试结束后销毁，禁止提交至 Git。

@@ -1,136 +1,147 @@
 # Health Quantification
 
-## 这是什么
+AI-first 个人健康量化基础设施。通过 iOS App 采集 Apple Health 数据，经 FastAPI 服务归一化并幂等落盘至 SQLite，提供 Python CLI 进行结构化数据查询与记录管理。数据分析与报告生成完全由 AI 驱动。
 
-AI-first 的个人健康量化基础设施。采集 Apple Health 数据（睡眠、生命体征、活动、体测、生活方式），归一化落盘到 SQLite，通过 CLI 提供结构化数据接口。分析和报告完全由 AI 完成。
+AI 编程工具（如 Claude Code、Cursor、OpenCode）读取 `AGENTS.md` 和 Skill 文件后，即可自主完成环境配置、数据库初始化、数据查询与报告分析。
 
-这个项目的第一用户是 AI agent，不是人类。人类通过 AI 来使用它。打开一个 AI 编程工具（Claude Code、Cursor、OpenCode 等），指向这个仓库，让它读 `AGENTS.md` 和 skill 文件，它会自己搞清楚怎么编译、部署、采集数据、分析、生成报告。
+## 系统架构
 
-## 架构
+采用三层解耦架构：
 
-三层分离，各层可独立运行：
-
-```
-iPhone (HealthKit) --POST--> Mac (FastAPI:7996) --write--> SQLite
-                                                        --read--> CLI (JSON) --> AI
+```text
+iPhone (HealthKit) --POST--> Mac (FastAPI:7996) --write--> SQLite (唯一事实来源)
+                                                        --read--> CLI (JSON) --> AI Agent
 ```
 
-- **采集层**：iOS app，HealthKit 读取所有数据类型 POST 到 FastAPI
-- **写入层**：FastAPI server，幂等写入 SQLite（pm2 管理，Tailscale 内网通信）
-- **数据层**：Python CLI，只读查询 SQLite，输出 JSON；AI 负责分析和报告生成
+- **采集层**：iOS App 从 HealthKit 读取数据，并通过同一 Tailnet 的 Tailscale 地址 POST 至 Mac。
+- **写入层**：FastAPI 后端只负责批量接入与幂等写入 SQLite。设备身份、传输加密和访问控制由 Tailscale 与 tailnet ACL 管理，不由 FastAPI 实现。
+- **分析与交互层**：Python CLI 在 Mac 本地读取 SQLite，或执行单条数据/备注写入；AI Agent 在本地 CLI 输出基础上分析与渲染。
 
-## 数据类型
+## 输出示例
 
-| 类别 | 数据 | 来源 |
-|------|------|------|
-| 睡眠 | stages, duration, bedtime, wake time | Apple Watch 自动 |
-| 生命体征 | 静息心率, HRV, 呼吸频率, 血氧 | Apple Watch 自动 |
-| 活动 | 步数 | Apple Watch / iPhone 自动 |
-| 体测 | 体重, 血糖, 血压 | WiFi 秤 / CGM / 蓝牙血压计 |
-| 生活方式 | 咖啡因, 酒精 | Siri / Apple Health 手动记录 |
-| 运动记录 | 类型、时长、卡路里、距离 | Apple Watch structured workouts |
+项目包含几张示例图，展示 AI 如何将 CLI 的结构化输出组织成日卡片、趋势图和前后对比。它们是仓库展示素材，不会在本地同步或测试流程中覆盖。
 
-## 如何使用（通过 AI）
+![Daily health card example](docs/assets/daily_card.svg)
 
-### 前置条件
+![Sleep trend example](docs/assets/sleep_trend.svg)
 
-- macOS + Xcode（编译 iOS app）
-- Python 3.11+（CLI 和后端）
-- 一台 iPhone + Apple Watch（数据源）
-- Apple Developer 账号（HealthKit 真机调试需要）
-- Tailscale（让 iPhone 能访问 Mac 上的后端）
-- Node.js + pm2（可选：用于长期托管后端；直接运行脚本则不需要）
-- 一个 AI 编程工具（Claude Code / Cursor / OpenCode 等）
+![Sleep before and after comparison example](docs/assets/sleep_before_after.svg)
 
-### 推荐工作流
+## 数据类型与指标映射
 
-1. **用 AI 工具打开这个仓库**。Claude Code 直接 `cd` 进来，Cursor 打开项目文件夹，OpenCode 在 workspace 中指向 `adhoc_jobs/health_quantification/`。
+CLI 查询与写入参数中，`--metric` 必须使用数据库存储的精确名称。`GET /ingest/{data_type}` 的 `metric_type` 过滤参数仅适用于生命体征、体测、生活方式与活动；睡眠数据按 `stage`，运动数据按 `workout_type`。
 
-2. **让 AI 读 `AGENTS.md`**。这个文件描述了项目架构、代码边界、时区处理等所有 agent 需要知道的上下文。如果 AI 工具支持 skill 系统（如 OpenCode），`rules/skills/health_quantification.md` 提供了更完整的分析工作流指引。
+| 类别 | 指标类型 (`metric_type`) | 单位 | 来源与采集方式 |
+|------|-------------------------|------|----------------|
+| 睡眠 | `asleep_deep`, `asleep_core`, `asleep_rem`, `awake` | stage | Apple Watch 自动采集 |
+| 生命体征 | `resting_heart_rate`, `heart_rate_variability_sdnn`, `respiratory_rate`, `oxygen_saturation`, `heart_rate`, `active_energy_burned` | count/min, ms, %, kcal | Apple Watch 自动采集 |
+| 活动 | `step_count` | count | Apple Watch / iPhone 自动采集 |
+| 体测 | `body_mass`, `blood_glucose`, `blood_pressure_systolic`, `blood_pressure_diastolic` | kg, mg/dL, mmHg | 智能秤 / CGM / 蓝牙血压计 |
+| 生活方式 | `dietary_caffeine`, `dietary_alcohol` | mg, g | HealthKit 同步 / CLI 手动记录 |
+| 运动 | Apple Health `HKWorkoutActivityType` 名称 | - | Apple Watch 结构化运动 |
 
-3. **让 AI 完成环境搭建**：
+## 快速开始
 
-```bash
-uv venv .venv
-uv pip install --python .venv/bin/python -e .[dev]
-.venv/bin/python -m health_quantification.cli doctor config
-.venv/bin/python -m health_quantification.cli db init
-```
+### 环境依赖
 
-4. **让 AI 启动后端**（数据采集需要）：
+- macOS + Xcode（项目配置的目标平台为 iOS 26.2，用于编译 iOS App）
+- Python 3.11+ 与 `uv` 包管理器
+- iPhone 与 Apple Watch（数据采集）
+- Apple Developer 账号（真机调试 HealthKit）
+- 同一 Tailnet 中已通过 ACL 允许互访的 iPhone 与 Mac
 
-```bash
-scripts/start_backend.sh
-```
+### 配置与运行步骤
 
-启动前先确认 `HEALTH_QUANT_SERVER_PORT` / `HEALTH_QUANT_SERVER_HOST`，并确保 iOS app 里填写的 Server URL 和后端实际监听地址一致。
+1. **环境准备与数据库初始化**：
 
-5. **让 AI 用 Xcode 编译 iOS app**。在真机上运行，授权 HealthKit 访问，点击 Export All 同步数据。
-
-   iOS app 也支持从 Shortcuts 触发导出。快捷指令里添加 **Open URL** action，URL 填：
-
-   ```text
-   healthquantification://export-all
+   ```bash
+   uv venv .venv
+   uv pip install --python .venv/bin/python -e .[dev]
+   .venv/bin/python -m health_quantification.cli doctor config
+   .venv/bin/python -m health_quantification.cli db init
    ```
 
-   这会打开 app，并自动执行和 **Export All Data** 按钮相同的 30 天全量同步流程。它仍然使用 app 里保存的 Server URL，所以第一次使用前需要手动打开 app 填好后端地址并完成 HealthKit 授权。
+2. **启动后端服务**：
 
-   支持 client capability 的 OpenCode iOS 还可以构造带一次性 callback 的 URL，在同步完成后自动回到原 Car Mode session：
-
-   ```text
-   healthquantification://export-all?callback=<percent-encoded-opencode-callback>
+   ```bash
+   scripts/start_backend.sh
    ```
 
-   callback 必须由 OpenCode 生成；不要手工复用。Health Quantification 只返回同步状态、样本总计数和失败类别，不把健康样本放进 URL。正式 provider contract 见 [`docs/ios_client_export_rfc.md`](docs/ios_client_export_rfc.md)。
+    默认监听 `0.0.0.0:7996`，可通过 `HEALTH_QUANT_SERVER_HOST` 与 `HEALTH_QUANT_SERVER_PORT` 覆盖。后端没有应用层鉴权，部署模型是仅允许同一 Tailnet 中受 ACL 控制的 iPhone 通过 Tailscale 连接同步；不要把端口暴露到公网或普通 LAN。验证 Mac 本地服务：`curl http://localhost:7996/health`。
 
-第一次在新机器上编译 iOS app 时，让 AI 带你完成这几个动作：
+3. **编译并配置 iOS App**：
+   - 打开 `HealthQuantification/HealthQuantification.xcodeproj`。
+   - 在 Xcode Signing & Capabilities 中配置开发 Team，并将 Bundle Identifier 修改为自定义命名空间。
+   - 在真机上运行，授权 HealthKit 访问权限。
+    - 将 App 内的 Server URL 设置为 Mac 的 Tailscale 地址（如 `http://100.x.x.x:7996`），请勿使用 `localhost` 或普通 LAN IP。
+   - 首次配置详细说明参见 [`docs/first_time_ios_developer.md`](docs/first_time_ios_developer.md)。
 
-- 打开 `HealthQuantification/HealthQuantification.xcodeproj`
-- 在 Xcode 的 Signing & Capabilities 中把 Team 改成你自己的 Apple Developer Team
-- 把 app 和 test target 的 Bundle Identifier 改成你自己的命名空间，避免和仓库默认值冲突
-- 选择一台真机而不是 Simulator。HealthKit 导出需要真机权限
-- 在 iPhone 上确认开发者信任和 Health 权限弹窗
+4. **数据同步入口与数据边界**：
+   - App 内点击 **Export All Data** 执行全量同步。
+   - FastAPI Ingestion 端点对 `samples` 校验 `min_length=1`，会直接拒绝空样本数组（422 错误）。目前 iOS 客户端在 `body` 和 `lifestyle` 无样本时主动跳过提交，而其余类别仍会提交空数组触发 422。空类别与缺失数据处理属于需要客户端预校验的边界，并非全类别自动容错。
+   - 支持 Shortcuts 快捷指令触发导出，快捷指令添加 Open URL 动作：
 
-启动后端后，iOS app 里的 Server URL 不要填 `localhost`。请填写你的 Mac 在同一个 Tailscale 网络下的地址，例如 `http://100.x.x.x:7996`。
+     ```text
+     healthquantification://export-all
+     ```
 
-更完整的首次真机调试检查清单见 [`docs/first_time_ios_developer.md`](docs/first_time_ios_developer.md)，覆盖开发者模式、Xcode 账号、签名、Bundle Identifier、Server URL、防火墙和端口一致性。
+   - 支持带一次性 callback 的跨 App 导出 handoff：
 
-6. **让 AI 做分析**。告诉它你想要什么（比如"帮我分析过去 30 天的综合健康状况"），它会：
-   - 调用 CLI 获取各类型 JSON 数据
-   - 自行决定分析角度（趋势、异常、交叉关联等）
-   - 用 matplotlib 生成 PNG 图表，输出到 `docs/assets/`
-   - 撰写 Markdown 报告，输出到 `docs/reports/`
+     ```text
+     healthquantification://export-all?callback=<percent-encoded-opencode-callback>
+     ```
 
-### CLI 数据接口
+     规范说明参见 [`docs/ios_client_export_rfc.md`](docs/ios_client_export_rfc.md)。
 
-AI 通过以下命令获取原始数据，然后自行分析：
+## CLI 交互规范
+
+（以下所有 CLI 命令与 JSON 响应示例均使用合成示例数据）
+
+### 结构化查询
 
 ```bash
 python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json
 python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
-python -m health_quantification.cli vitals analyze --days 30 --format json
-python -m health_quantification.cli body analyze --days 30 --format json
-python -m health_quantification.cli lifestyle analyze --days 30 --format json
-python -m health_quantification.cli activity analyze --days 30 --format json
-python -m health_quantification.cli vitals analyze --days 30 --metric heart_rate --format json
-python -m health_quantification.cli vitals analyze --days 30 --metric active_energy_burned --format json
+python -m health_quantification.cli sleep daily --last-night --format json
+python -m health_quantification.cli vitals analyze --days 30 --metric resting_heart_rate --format json
+python -m health_quantification.cli body analyze --days 30 --metric body_mass --format json
+python -m health_quantification.cli lifestyle analyze --days 30 --metric dietary_caffeine --format json
+python -m health_quantification.cli activity analyze --days 30 --metric step_count --format json
 python -m health_quantification.cli workouts analyze --days 30 --format json
 ```
 
-CLI 只输出数据。所有分析逻辑、可视化、报告格式由 AI 决定。
+### 睡眠主观备注 (Sleep Notes)
 
-### 人类直接使用
+```bash
+python -m health_quantification.cli sleep notes add --date 2026-03-30 --note "合成示例主观睡眠上下文"
+python -m health_quantification.cli sleep notes get --date 2026-03-30 --format json
+```
 
-如果不想用 AI，也可以手动跑 CLI 看 JSON 输出，或者用 `--format text` 获得人类可读的文本摘要。
+`sleep daily` 和 `sleep analyze` 命令会自动输出同日 `notes`。主观备注仅存储在本地 SQLite 的 `daily_summaries` 中（主键为 `date`），不参与 FastAPI 传输与 iOS 导出，亦不影响睡眠阶段判定或指标计算。由于 CLI 会输出备注文本，模型运行时、系统日志、transcript 与报告 pipeline 构成了调用方的隐私边界。代码并不阻止备注传至外部模型或服务，调用方需自行承担隐私保护责任。主观备注仅作为上下文，不代表医疗诊断或治疗指令。
 
-## 当前明确不做的事
+### 单条记录与状态记录
 
-- GUI-first 产品
-- App Store 分发
-- 实时告警
-- 直接从 Python 访问 HealthKit
-- 医疗诊断或治疗建议
-- 饮水量、营养日志、详细运动记录
-- CLI 内置的报告生成（这是 AI 的活）
+```bash
+python -m health_quantification.cli record lifestyle --metric dietary_caffeine --value 150 --unit mg --note "Synthetic double shot"
+python -m health_quantification.cli illness record --label nasal_congestion --severity moderate --status active --start-time "2026-04-01T20:00:00-07:00"
+python -m health_quantification.cli illness list --status active --format json
+```
+
+注意：`record sleep` 因缺少结束时间会写入零时长的阶段标记，不推荐用于手动睡眠时长记录；添加主观睡眠体验请使用 `sleep notes add`。
+
+## 隐私与安全约定
+
+- 本仓库为公开代码库。禁止提交真实个人健康测量值、生理特征、地理位置、姓名、私人设备标识或绝对路径。
+- 所有数据落盘文件（`data/*.db`）、导出记录、报告文档与临时文件均处于 `.gitignore` 排除范围。
+- 新增与修改的测试与文档示例必须采用合成（synthetic）数据。
+- 自由格式主观备注为本地记录，不作医疗诊断依据。CLI 会输出同日 notes；调用方必须避免将其写入公共 Artifact、外部服务或不受控的模型上下文。
+
+## 非目标
+
+- 不提供面向公众分发的 App Store 版本及 GUI 产品。
+- 不从 Python 层直接调用 HealthKit。
+- 不提供实时告警或医疗诊断功能。
+- 不在 FastAPI 后端提供复杂分析接口（分析逻辑均由 CLI 与 AI 完成）。
+- 不提供全流程 iOS 到 FastAPI 的端到端自动化集成测试（Swift 单元测试与 Python ASGI 测试保持解耦）。

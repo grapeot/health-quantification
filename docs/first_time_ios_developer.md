@@ -1,18 +1,18 @@
 # First-Time iOS Developer Setup
 
-This project uses a local FastAPI backend on your Mac and a real iPhone app that reads HealthKit data. Most first-time setup failures come from iOS signing or from the phone trying to talk to `localhost`.
+This guide details the setup required to run the local FastAPI backend on macOS and deploy the iOS HealthKit exporter app to a physical iPhone.
 
-## What This Setup Requires
+## Prerequisites
 
-- macOS with Xcode installed
-- Python 3.11+ with the project virtualenv installed
-- A real iPhone signed into your Apple ID
-- Apple Watch data in Apple Health
-- A network path from iPhone to Mac, preferably Tailscale
+- macOS with Xcode installed (Xcode project deployment target set to iOS 26.2)
+- Python 3.11+ with the project virtual environment
+- A physical iPhone running a supported iOS version signed into an Apple ID
+- Apple Watch data recorded in Apple Health
+- iPhone and Mac joined to the same Tailnet, with ACLs allowing the iPhone to reach the Mac
 
-HealthKit export needs a real device. The simulator can build the app, but it is not enough for the full data export path.
+*Note: HealthKit data export requires a physical iOS device. The iOS Simulator can be used for UI and contract testing, but cannot perform real HealthKit data sync.*
 
-## Backend Checklist
+## Backend Setup
 
 Start the backend from the repository root:
 
@@ -20,63 +20,62 @@ Start the backend from the repository root:
 scripts/start_backend.sh
 ```
 
-By default this listens on `0.0.0.0:7996`, matching `.env.example`, `config.py`, and the README. You can override it explicitly:
+By default, the server listens on `0.0.0.0:7996`. Environment overrides are supported:
 
 ```bash
 HEALTH_QUANT_SERVER_HOST=0.0.0.0 HEALTH_QUANT_SERVER_PORT=7996 scripts/start_backend.sh
 ```
 
-Before debugging iOS, verify the backend from the Mac:
+Verify backend health from your Mac (example command using synthetic local address):
 
 ```bash
 curl http://localhost:7996/health
 ```
 
-If the iPhone cannot connect, check macOS firewall settings and confirm the phone and Mac are on the same LAN or Tailscale network.
+FastAPI exposes unauthenticated raw endpoints (`GET`, `POST`, `DELETE`). The supported deployment model is a single Tailnet: the iPhone reaches the Mac only through its Tailscale address, while device identity, transport encryption, and access control come from Tailscale and its ACLs. Do not expose this service on a public or ordinary LAN address. If the endpoint fails to respond, verify the Tailscale connection, ACL policy, macOS firewall, and service port.
 
-## Xcode Signing Checklist
+## Xcode Configuration & Signing
 
-Open `HealthQuantification/HealthQuantification.xcodeproj` in Xcode and check these items before building to a real iPhone:
+Open `HealthQuantification/HealthQuantification.xcodeproj` in Xcode:
 
-- Sign into Xcode under Settings -> Accounts.
-- Select your own Team in Signing & Capabilities.
-- Change the app target Bundle Identifier to a prefix you control, for example `dev.yourname.HealthQuantificationIOS`.
-- Change test target Bundle Identifiers if Xcode asks for signing there too.
-- Keep Automatically manage signing enabled unless you have a specific provisioning setup.
+1. Sign into Xcode via **Settings -> Accounts**.
+2. Select your Developer Team under **Signing & Capabilities**.
+3. Change the App target **Bundle Identifier** to a unique prefix under your control (e.g., synthetic placeholder `com.example.HealthQuantificationIOS`).
+4. Update the test target Bundle Identifiers if required by Xcode.
+5. Keep **Automatically manage signing** enabled.
 
-Bundle Identifiers are globally unique in Apple Developer systems. The repository default can be occupied by the maintainer's account, so a new developer should expect to change it.
+*Bundle Identifiers must be globally unique in Apple's developer system. Update the default placeholder before building.*
 
-## iPhone Checklist
+## iPhone Setup
 
-Before installing from Xcode to a real phone:
+Before deploying from Xcode to a physical device:
 
-- Enable Developer Mode on the iPhone under Settings -> Privacy & Security -> Developer Mode. This requires a restart.
-- If iOS blocks the installed app as an untrusted developer app, trust your developer account in Settings -> General -> VPN & Device Management.
-- Launch the app once from Xcode and accept HealthKit permission prompts.
+1. Enable Developer Mode on the iPhone (**Settings -> Privacy & Security -> Developer Mode**), then restart the device.
+2. If iOS displays an untrusted developer prompt upon launching the app, trust your account under **Settings -> General -> VPN & Device Management**.
+3. Launch the app and approve the HealthKit permission prompts.
 
-## Server URL In The iOS App
+## Server URL Configuration
 
-Do not use `http://localhost:7996` on a real iPhone. On the phone, `localhost` means the phone itself, not your Mac.
+Do not set `http://localhost:7996` inside the iOS app UI. On iOS, `localhost` resolves to the iPhone itself.
 
-Use one of these instead:
+Set the Server URL in the iOS app to your Mac's Tailscale IP (the following synthetic IP demonstrates the format):
 
 ```text
-http://192.168.x.x:7996
 http://100.x.x.x:7996
 ```
 
-The first form is your Mac's LAN IP. The second form is your Mac's Tailscale IP. The backend must listen on `0.0.0.0`, or on the specific interface address the iPhone can reach.
+The backend server must be listening on `0.0.0.0` or on the specific network interface address accessible by the iPhone.
 
 ## Common Failure Modes
 
-| Symptom | Likely cause | Fix |
+| Symptom | Cause | Resolution |
 |---|---|---|
-| Xcode waits for the iPhone and then fails | Developer Mode is disabled | Enable Developer Mode and restart the phone |
-| `No Accounts` or missing provisioning profile | Xcode is not signed into Apple ID | Add your Apple ID in Xcode Settings -> Accounts |
-| App ID cannot be registered | Bundle Identifier is already taken | Change Bundle Identifier to your own prefix |
-| App installs but cannot export | Server URL points to `localhost` | Use Mac LAN IP or Tailscale IP |
-| Phone connects to wrong port | Backend and app ports differ | Use `7996`, or set both sides to the same explicit port |
+| Xcode deployment fails or hangs | Developer Mode disabled on iPhone | Enable Developer Mode in Settings and restart phone |
+| Provisioning profile error | Missing Apple ID in Xcode | Add Apple ID in Xcode Settings -> Accounts |
+| App ID registration error | Bundle Identifier collision | Change Bundle Identifier to a custom namespace |
+| App installed but export fails | Server URL set to `localhost` or a LAN IP | Update Server URL to Mac Tailscale IP |
+| Connection refused on export | Port mismatch or backend down | Ensure backend is running and port matches `7996` |
 
-## Notes For Contributors
+## Contribution Guidelines
 
-Keep machine-specific values out of committed project files. Bundle Identifier, Team, and Server URL are local setup choices. Documentation should explain how to choose them, while the repository defaults stay generic.
+Do not commit machine-specific credentials, Team IDs, or local network IP addresses to Git. Keep configuration parameters and examples synthetic and generic in committed documentation.
