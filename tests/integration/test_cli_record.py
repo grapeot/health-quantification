@@ -154,6 +154,33 @@ def test_record_command_requires_metric(tmp_path, monkeypatch, capsys) -> None:
     assert "--metric" in capsys.readouterr().err
 
 
+def test_sleep_notes_add_and_get_commands(tmp_path, monkeypatch, capsys) -> None:
+    db_path = tmp_path / "cli_sleep_notes.db"
+    monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
+
+    assert (
+        main(
+            [
+                "sleep",
+                "notes",
+                "add",
+                "--date",
+                "2040-01-02",
+                "--note",
+                "Synthetic sleep context",
+            ]
+        )
+        == 0
+    )
+    added = json.loads(capsys.readouterr().out)
+    assert added == {"status": "recorded", "date": "2040-01-02", "notes_count": 1}
+
+    assert main(["sleep", "notes", "get", "--date", "2040-01-02", "--format", "json"]) == 0
+    retrieved = json.loads(capsys.readouterr().out)
+    assert retrieved["date"] == "2040-01-02"
+    assert retrieved["notes"] == ["Synthetic sleep context"]
+
+
 def test_record_command_requires_value(tmp_path, monkeypatch, capsys) -> None:
     db_path = tmp_path / "cli_record_requires_value.db"
     monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))

@@ -32,7 +32,7 @@ python -m health_quantification.cli sleep analyze --days 30 --format json
 python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
 ```
 
-CLI 只提供结构化数据（JSON/text）。分析、可视化和报告生成由 AI 完成。AI 可调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表，图表输出到 `docs/assets/`。
+CLI 只提供结构化数据（JSON/text）。分析、可视化和报告生成由 AI 完成。分析睡眠时必须同时检查同一 functional date 的设备指标和 `notes`：前者是测量，后者是主观上下文，不能把 note 直接当作因果或医学诊断。AI 可调用 `artifacts/report.py` 中的辅助函数生成 PNG 图表，图表输出到 `docs/assets/`。
 
 ## 代码边界
 

@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 import pytest
 
 from health_quantification.storage import (
+    append_daily_note,
     initialize_database,
+    query_daily_notes,
     query_illness_episodes,
     record_illness_episode,
     record_sample,
@@ -205,6 +207,38 @@ def test_record_sample_rejects_unknown_data_type(tmp_path) -> None:
                 "metadata": {},
             },
         )
+
+
+def test_daily_notes_append_without_overwriting_summary_metrics(tmp_path) -> None:
+    db_path = tmp_path / "daily_notes.db"
+    initialize_database(db_path)
+    with sqlite3.connect(db_path) as connection:
+        _ = connection.execute(
+            "INSERT INTO daily_summaries (date, timezone, sleep_hours, steps) VALUES (?, ?, ?, ?)",
+            ("2040-01-02", "America/Los_Angeles", 7.5, 9000),
+        )
+        connection.commit()
+
+    assert append_daily_note(db_path, "2040-01-02", "America/Los_Angeles", "Synthetic context one") == 1
+    assert append_daily_note(db_path, "2040-01-02", "America/Los_Angeles", "Synthetic context two") == 2
+
+    row = fetch_one(db_path, "SELECT sleep_hours, steps, notes_json FROM daily_summaries")
+    assert row["sleep_hours"] == 7.5
+    assert row["steps"] == 9000
+    assert json.loads(row["notes_json"]) == ["Synthetic context one", "Synthetic context two"]
+    assert query_daily_notes(db_path, from_date="2040-01-02", to_date="2040-01-02") == {
+        "2040-01-02": ["Synthetic context one", "Synthetic context two"]
+    }
+
+
+def test_daily_notes_reject_invalid_input(tmp_path) -> None:
+    db_path = tmp_path / "daily_notes_invalid.db"
+    initialize_database(db_path)
+
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        append_daily_note(db_path, "01-02-2040", "America/Los_Angeles", "Synthetic context")
+    with pytest.raises(ValueError, match="must not be blank"):
+        append_daily_note(db_path, "2040-01-02", "America/Los_Angeles", "  ")
 
 
 def test_record_illness_episode_routes_to_illness_episodes(tmp_path) -> None:

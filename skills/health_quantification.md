@@ -124,6 +124,8 @@ python -m health_quantification.cli db init
 python -m health_quantification.cli sleep analyze --days 30 --format json|text
 python -m health_quantification.cli sleep daily --date YYYY-MM-DD --format json|text
 python -m health_quantification.cli sleep daily --last-night --format json|text
+python -m health_quantification.cli sleep notes add --date YYYY-MM-DD --note "Free-form sleep context"
+python -m health_quantification.cli sleep notes get --date YYYY-MM-DD --format json|text
 python -m health_quantification.cli vitals analyze --days 30 --metric resting_heart_rate --format json|text
 python -m health_quantification.cli vitals daily --date YYYY-MM-DD --format json|text
 python -m health_quantification.cli body analyze --days 30 --metric body_mass --format json|text
@@ -156,6 +158,14 @@ python -m health_quantification.cli illness record --label nasal_congestion --se
 
 `illness record` 用于记录区间型上下文，不要把生病硬塞进 `record lifestyle` 之类的 numeric sample。`illness` 记录的 canonical shape 是 episode：`label`、`severity`、`status`、`start_at`、`end_at`、`notes`、`metadata`（如 symptoms / progression）。
 
+### Sleep notes
+
+睡眠原因、主观感受和未结构化上下文使用 `sleep notes add`。`--date` 与 `sleep daily --date` 相同，均指夜间睡眠醒来所在的 functional date；先用 `sleep daily --last-night` 确认日期，再写入，避免把跨午夜睡眠记到入睡日。
+
+notes 是原始叙述，不预先分类，也不改变睡眠样本、session 划分或统计指标。`sleep daily` 和 `sleep analyze` 会返回同日 notes；分析必须同时查看设备指标与 notes，明确区分设备测量、主观描述和推断，不将单条 note 当作因果或医学诊断。
+
+notes 可能包含敏感健康和家庭上下文。它们只保存在本地 SQLite，不进入 FastAPI、iOS 同步、测试 fixture、Git、公开报告或外部 agent prompt。
+
 ## AI 记录工作流
 
 当用户提到健康相关事件时（如"我刚喝了杯咖啡"、"今天体重 74.5kg"、"我这两天在生病"），AI 应：
@@ -163,7 +173,7 @@ python -m health_quantification.cli illness record --label nasal_congestion --se
 1. **识别意图**：这是一个需要记录的健康事件
 2. **引导补全细节**：确认品牌、容量、时间、具体数值等
 3. **查表换算**：从知识库或网上获取营养数据（咖啡因含量、卡路里等）
-4. **选择正确写入面**：单点数值/样本走 CLI `record`；区间型 illness context 走 CLI `illness record`
+4. **选择正确写入面**：单点数值/样本走 CLI `record`；区间型 illness context 走 CLI `illness record`；整晚的主观睡眠上下文走 `sleep notes add`
 5. **确认反馈**：告知用户已记录的数值和来源
 
 ### Illness episode 记录规则
@@ -229,9 +239,10 @@ AI：记录完成。墨西哥可乐 500ml，约 48mg 咖啡因，时间 12:00 PT
 AI 完全控制分析过程。典型工作流：
 
 1. 调用 CLI 获取 JSON 数据
-2. 基于数据自由分析（趋势、异常、对比、交叉关联等）
-3. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 生成 PNG 图表
-4. 撰写 Markdown 报告，图片引用使用相对路径
+2. 睡眠分析时同时审阅同一 functional date 的 `notes`，并将设备指标、主观 context 和推断分开陈述
+3. 基于数据自由分析（趋势、异常、对比、交叉关联等）
+4. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 生成 PNG 图表
+5. 撰写 Markdown 报告，图片引用使用相对路径
 
 ### 用户偏好
 

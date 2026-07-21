@@ -21,7 +21,9 @@ from health_quantification.analysis.sleep import (
 from health_quantification.config import load_settings
 from health_quantification.models import MetricAnalysisSummary, MetricDailySummary
 from health_quantification.storage import (
+    append_daily_note,
     initialize_database,
+    query_daily_notes,
     query_illness_episodes,
     query_activity_samples,
     query_body_samples,
@@ -163,6 +165,15 @@ def build_parser() -> argparse.ArgumentParser:
     sleep = subparsers.add_parser("sleep")
     sleep_sub = sleep.add_subparsers(dest="sleep_command", required=True)
 
+    sleep_notes = sleep_sub.add_parser("notes")
+    sleep_notes_sub = sleep_notes.add_subparsers(dest="sleep_notes_command", required=True)
+    sleep_notes_add = sleep_notes_sub.add_parser("add")
+    sleep_notes_add.add_argument("--date", required=True)
+    sleep_notes_add.add_argument("--note", required=True)
+    sleep_notes_get = sleep_notes_sub.add_parser("get")
+    sleep_notes_get.add_argument("--date", required=True)
+    sleep_notes_get.add_argument("--format", choices=["json", "text"], default="json")
+
     sleep_analyze = sleep_sub.add_parser("analyze")
     sleep_analyze.add_argument("--days", type=int, default=30)
     sleep_analyze.add_argument("--format", choices=["json", "text"], default="json")
@@ -239,6 +250,18 @@ def _print_sleep_sessions(metrics: DaySleepMetrics) -> None:
             f"rem={session.rem_sleep_hours}h awake={session.awake_hours}h "
             f"unspecified={session.unspecified_hours}h"
         )
+
+
+def _print_sleep_notes(metrics: DaySleepMetrics) -> None:
+    if not metrics.notes:
+        return
+    print("Notes:")
+    for note in metrics.notes:
+        print(f"  - {note}")
+
+
+def _attach_daily_notes(metrics: DaySleepMetrics, notes_by_date: dict[str, list[str]]) -> None:
+    metrics.notes = notes_by_date.get(metrics.date, [])
 
 
 def _compute_last_night_metrics(
@@ -400,11 +423,38 @@ def main(argv: list[str] | None = None) -> int:
 
     initialize_database(settings.db_path)
 
+    if args.command == "sleep" and args.sleep_command == "notes":
+        if args.sleep_notes_command == "add":
+            notes_count = append_daily_note(
+                settings.db_path, args.date, settings.timezone, args.note
+            )
+            print(json.dumps({"status": "recorded", "date": args.date, "notes_count": notes_count}))
+            return 0
+        if args.sleep_notes_command == "get":
+            notes = query_daily_notes(
+                settings.db_path, from_date=args.date, to_date=args.date
+            ).get(args.date, [])
+            if args.format == "json":
+                print(json.dumps({"date": args.date, "timezone": settings.timezone, "notes": notes}))
+            else:
+                print(f"Date: {args.date}")
+                for note in notes:
+                    print(f"  - {note}")
+            return 0
+
     if args.command == "sleep" and args.sleep_command == "analyze":
         samples = query_sleep_samples(db_path=settings.db_path)
         days_map = assign_samples_to_days(samples, settings.timezone)
         _check_data_freshness(days_map, settings.timezone)
         analysis = compute_analysis(samples, args.days, settings.timezone)
+        if analysis.daily:
+            notes_by_date = query_daily_notes(
+                settings.db_path,
+                from_date=analysis.daily[0].date,
+                to_date=analysis.daily[-1].date,
+            )
+            for day in analysis.daily:
+                _attach_daily_notes(day, notes_by_date)
         if args.format == "json":
             print(json.dumps(analysis.to_dict(), indent=2, default=str))
         else:
@@ -424,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 else:
                     print(f"  {day.date}: no data")
+                _print_sleep_notes(day)
         return 0
 
     if args.command == "sleep" and args.sleep_command == "daily":
@@ -441,6 +492,10 @@ def main(argv: list[str] | None = None) -> int:
             target_date = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
             day_samples = days_map.get(target_date, [])
             metrics = compute_day_metrics(day_samples, target_date, settings.timezone)
+        _attach_daily_notes(
+            metrics,
+            query_daily_notes(settings.db_path, from_date=metrics.date, to_date=metrics.date),
+        )
         if args.format == "json":
             print(json.dumps(metrics.to_dict(), indent=2))
         else:
@@ -458,6 +513,7 @@ def main(argv: list[str] | None = None) -> int:
             if metrics.sleep_efficiency:
                 print(f"Efficiency: {metrics.sleep_efficiency}%")
             _print_sleep_sessions(metrics)
+            _print_sleep_notes(metrics)
         return 0
 
     metric_queries: dict[str, Callable[..., list[dict[str, object]]]] = {

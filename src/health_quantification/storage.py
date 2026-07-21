@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
@@ -217,6 +217,76 @@ def _notes_json(sample: dict[str, object]) -> str:
     if isinstance(notes, list):
         return json.dumps(notes)
     return json.dumps([notes])
+
+
+def append_daily_note(db_path: Path, date_str: str, timezone: str, note: str) -> int:
+    try:
+        date.fromisoformat(date_str)
+    except ValueError as error:
+        raise ValueError("date must use YYYY-MM-DD format") from error
+    if not note.strip():
+        raise ValueError("daily note must not be blank")
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT timezone, notes_json FROM daily_summaries WHERE date = ?", (date_str,)
+        ).fetchone()
+        if row is None:
+            notes = [note]
+            _ = conn.execute(
+                "INSERT INTO daily_summaries (date, timezone, notes_json) VALUES (?, ?, ?)",
+                (date_str, timezone, json.dumps(notes)),
+            )
+        else:
+            existing_timezone, notes_json = row
+            if existing_timezone != timezone:
+                raise ValueError(f"daily note timezone mismatch for {date_str}")
+            try:
+                notes = json.loads(notes_json)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"invalid notes_json for {date_str}") from error
+            if not isinstance(notes, list) or not all(isinstance(item, str) for item in notes):
+                raise ValueError(f"invalid notes_json for {date_str}")
+            notes.append(note)
+            _ = conn.execute(
+                "UPDATE daily_summaries SET notes_json = ?, updated_at = CURRENT_TIMESTAMP WHERE date = ?",
+                (json.dumps(notes), date_str),
+            )
+        conn.commit()
+    return len(notes)
+
+
+def query_daily_notes(
+    db_path: Path,
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if from_date:
+        clauses.append("date >= ?")
+        params.append(from_date)
+    if to_date:
+        clauses.append("date <= ?")
+        params.append(to_date)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT date, notes_json FROM daily_summaries{where} ORDER BY date", params
+        ).fetchall()
+
+    notes_by_date: dict[str, list[str]] = {}
+    for date_str, notes_json in rows:
+        try:
+            notes = json.loads(notes_json)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"invalid notes_json for {date_str}") from error
+        if not isinstance(notes, list) or not all(isinstance(item, str) for item in notes):
+            raise ValueError(f"invalid notes_json for {date_str}")
+        notes_by_date[date_str] = notes
+    return notes_by_date
 
 
 def _upsert_samples(
