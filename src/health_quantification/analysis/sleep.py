@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 
 from zoneinfo import ZoneInfo
@@ -49,6 +49,7 @@ class DaySleepMetrics:
     nap_hours: float = 0.0
     has_nap: bool = False
     sessions: list[SleepSessionMetrics] | None = None
+    notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

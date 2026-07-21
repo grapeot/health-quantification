@@ -4,6 +4,9 @@ __pycache__/
 .DS_Store
 .env
 *.db
+*.db-*
+*.sqlite*
+tmp/
 docs/reports/
 docs/assets/
 **/docs/assets/
@@ -11,6 +14,9 @@ data/raw/*
 data/exports/*
 !data/raw/.gitkeep
 !data/exports/.gitkeep
+
+# Private health discussions — never commit
+private_discussions/
 dist/
 build/
 *.egg-info/

@@ -8,6 +8,7 @@ import health_quantification.analysis.metrics as metrics_module
 import health_quantification.cli as cli_module
 from health_quantification.cli import main
 from health_quantification.storage import (
+    append_daily_note,
     initialize_database,
     upsert_activity_samples,
     upsert_body_samples,
@@ -143,6 +144,9 @@ def test_sleep_cli_daily_outputs_sessions(tmp_path, monkeypatch, capsys) -> None
     db_path = tmp_path / "cli_sleep.db"
     monkeypatch.setenv("HEALTH_QUANT_DB_PATH", str(db_path))
     initialize_database(db_path)
+    assert append_daily_note(
+        db_path, "2026-03-31", "America/Los_Angeles", "Synthetic daily context"
+    ) == 1
 
     upsert_sleep_samples(
         db_path,
@@ -200,6 +204,7 @@ def test_sleep_cli_daily_outputs_sessions(tmp_path, monkeypatch, capsys) -> None
     assert payload["main_sleep_hours"] == 3.7
     assert payload["nap_hours"] == 2.25
     assert payload["additional_sleep_hours"] == 0.0
+    assert payload["notes"] == ["Synthetic daily context"]
     assert [session["session_type"] for session in payload["sessions"]] == ["main", "nap"]
 
 
@@ -210,6 +215,7 @@ def test_sleep_cli_analyze_outputs_daily(tmp_path, monkeypatch, capsys) -> None:
     tz = ZoneInfo("America/Los_Angeles")
     base_date = datetime.now(tz).date() - timedelta(days=2)
     second_date = base_date + timedelta(days=1)
+    assert append_daily_note(db_path, second_date.isoformat(), "America/Los_Angeles", "Synthetic analysis context") == 1
 
     upsert_sleep_samples(
         db_path,
@@ -267,6 +273,8 @@ def test_sleep_cli_analyze_outputs_daily(tmp_path, monkeypatch, capsys) -> None:
     daily = {day["date"]: day for day in payload["daily"]}
     assert daily[base_date.isoformat()]["main_sleep_hours"] == 3.7
     assert daily[second_date.isoformat()]["main_sleep_hours"] == 8.0
+    assert daily[base_date.isoformat()]["notes"] == []
+    assert daily[second_date.isoformat()]["notes"] == ["Synthetic analysis context"]
 
 
 def test_sleep_cli_last_night_uses_latest_functional_sleep(tmp_path, monkeypatch, capsys) -> None:
