@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 
-OUTPUT_DIR = Path("/Users/grapeot/co/knowledge_working/adhoc_jobs/health_quantification/docs/assets")
+OUTPUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "assets"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -4,347 +4,121 @@
 
 - 类型: Workflow
 - 适用场景: 需要读取、整理、汇总、分析或记录个人健康数据时
-- 触发词: "记录咖啡因"、"记录酒精"、"记录体重"、"记录生命体征"、"喝了一杯"、"生病了"
+- 触发词: "记录咖啡因"、"记录酒精"、"记录体重"、"记录生命体征"、"记录睡眠备注"、"记录生病"
 - 项目路径: `adhoc_jobs/health_quantification/`（从 workspace 根目录调用时自动解析）
 
 ## 目标
 
-CLI 提供结构化数据接口（JSON/text）和写入接口（record + illness），AI 负责所有分析、可视化和报告生成。AI 基于原始数据自由决定分析角度、报告结构和输出格式。报告以 Markdown 输出到 `docs/reports/`，图表以 PNG 输出到 `docs/assets/`。
+通过 Python CLI 访问 SQLite 数据库完成数据查询与写入，由 AI 承担多维分析、可视化与 Markdown 报告撰写。报告输出至 `docs/reports/`，图表输出至 `docs/assets/`。
 
 ## 架构
 
-以 SQLite 为中心的架构：
+以 SQLite 为核心的统一数据架构：
 
-1. **SQLite 数据库**：唯一事实来源（single source of truth）
-2. **数据源层**（多源整合）：HealthKit（iOS app）、AI 手动记录（CLI record）、第三方硬件（Fitbit、三星等）
-3. **写入层**：FastAPI server（批量同步，iOS/硬件）+ CLI `record`（单条写入，AI/手动）
-4. **分析层**：Python CLI（只读查询），输出 JSON/text；AI 做分析和报告生成
+1. **SQLite 数据库**：唯一事实来源（Single Source of Truth）。表包括 `observations`、`sleep_samples`、`vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples`、`workouts`、`illness_episodes` 与 `daily_summaries`（`date` 为主键，含 `timezone`、`sleep_hours`、`resting_hr_bpm`、`hrv_sdnn_ms`、`steps`、`active_energy_kcal`、`notes_json`）。
+2. **数据写入**：FastAPI Server 只接收 iPhone 通过同一 Tailnet 的 Tailscale 地址提交的批量数据。设备身份、传输加密与访问控制由 Tailscale 和 tailnet ACL 管理；FastAPI 本身未鉴权。CLI `record` / `illness` / `sleep notes` 在 Mac 本地写入。
+3. **数据读取**：Python CLI（只读查询），输出结构化 JSON/text 供 AI 进行分析与图表生成。
 
-## 数据类型
+## 数据类型与精确 `metric_type` 名称
 
-| 类别 | CLI 查询 | CLI 写入 | Ingest Endpoint |
-|------|---------|---------|----------------|
-| sleep | `sleep analyze/daily` | `record sleep` | `/ingest/sleep` |
-| vitals | `vitals analyze/daily` | `record vitals` | `/ingest/vitals` |
-| body | `body analyze/daily` | `record body` | `/ingest/body` |
-| lifestyle | `lifestyle analyze/daily` | `record lifestyle` | `/ingest/lifestyle` |
-| activity | `activity analyze/daily` | `record activity` | `/ingest/activity` |
-| workouts | `workouts analyze/daily` | — | `/ingest/workouts` |
-| illness | `illness list` | `illness record` | — |
+CLI 的 `--metric` 参数直接对应数据库中的 `metric_type` 列。传入不匹配的名称不会报错，但会静默返回空结果（`count=0`）。对于 HTTP GET 接口 `/ingest/{data_type}`，`metric_type` 过滤参数仅作用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。
 
-### ⚠️ metric_type 必须使用数据库中的精确名称
+### `metric_type` 精确映射表
 
-**这是最容易出错的地方。** CLI 的 `--metric` 参数直接对应 SQLite 里的 `metric_type` 列值。名字和人类直觉不一致，千万不要自己编。用错名字不会报错，只会返回空数据（count=0），导致分析遗漏。
+| 逻辑概念 | 正确 `metric_type` (数据库实际值) | CLI 数据类别 | 单位 |
+|---------|--------------------------------|-------------|------|
+| 静息心率 | `resting_heart_rate` | vitals | count/min |
+| 连续心率 | `heart_rate` | vitals | count/min |
+| HRV SDNN | `heart_rate_variability_sdnn` | vitals | ms |
+| 呼吸频率 | `respiratory_rate` | vitals | count/min |
+| 血氧饱和度 | `oxygen_saturation` | vitals | % |
+| 活动消耗 | `active_energy_burned` | vitals | kcal |
+| 体重 | `body_mass` | body | kg |
+| 血糖 | `blood_glucose` | body | mg/dL |
+| 收缩压 | `blood_pressure_systolic` | body | mmHg |
+| 舒张压 | `blood_pressure_diastolic` | body | mmHg |
+| 咖啡因 | `dietary_caffeine` | lifestyle | mg |
+| 酒精 | `dietary_alcohol` | lifestyle | g |
+| 步数 | `step_count` | activity | count |
 
-**常见错误映射（❌ 错误 → ✅ 正确）：**
+### 运动 (workouts) 类型
 
-| ❌ 错误（会返回空数据） | ✅ 正确（数据库中的实际值） | 数据来源 |
-|------------------------|--------------------------|---------|
-| `hrv_sdnn` | `heart_rate_variability_sdnn` | HealthKit |
-| `caffeine` | `dietary_caffeine` | HealthKit 同步；AI 手动记录也用这个 |
-| `alcohol` | `dietary_alcohol` | HealthKit |
-| `steps` | `step_count` | HealthKit |
-| `weight` | `body_mass` | HealthKit |
-| `blood_sugar` | `blood_glucose` | HealthKit |
-| `hr` | `heart_rate` | HealthKit |
-| `resting_hr` | `resting_heart_rate` | HealthKit |
-| `spo2` | `oxygen_saturation` | HealthKit |
-| `energy` | `active_energy_burned` | HealthKit |
-| `breathing_rate` | `respiratory_rate` | HealthKit |
+`workout_type` 为 Apple Health `HKWorkoutActivityType` 名称（例如 `running`、`traditionalStrengthTraining`、`HIIT`、`other`）。
 
-### 所有数据类型的 metric_type 完整列表
+## CLI 命令规范
 
-#### vitals
+（以下 CLI 命令及示例参数均采用合成示例数据）
 
-| metric_type | unit | 说明 |
-|-------------|------|------|
-| resting_heart_rate | count/min | 静息心率（每日 1-2 次） |
-| heart_rate | count/min | 连续心率（~5-10 分钟采样，运动时更频繁） |
-| heart_rate_variability_sdnn | ms | HRV SDNN（主要在睡眠中测量） |
-| respiratory_rate | count/min | 呼吸频率 |
-| oxygen_saturation | % | 血氧 |
-| active_energy_burned | kcal | 活动消耗（连续采样） |
-
-#### body
-
-| metric_type | unit | 说明 |
-|-------------|------|------|
-| body_mass | kg | 体重 |
-| blood_glucose | mg/dL | 血糖 |
-| blood_pressure_systolic | mmHg | 收缩压 |
-| blood_pressure_diastolic | mmHg | 舒张压 |
-
-#### lifestyle
-
-| metric_type | unit | 说明 |
-|-------------|------|------|
-| dietary_caffeine | mg | 咖啡因（HealthKit 同步 + AI 手动记录） |
-| dietary_alcohol | g | 酒精（HealthKit 同步） |
-
-#### activity
-
-| metric_type | unit | 说明 |
-|-------------|------|------|
-| step_count | count | 步数 |
-
-### workouts 字段
-
-workout_type 为 Apple Health `HKWorkoutActivityType` 名称（如 `fitnessGaming`、`running`、`traditionalStrengthTraining`、`HIIT`、`other`）。
-
-## 关键边界
-
-- 真正逻辑只放在 `src/health_quantification/`
-- `scripts/health_quant` 是稳定 wrapper，不写业务逻辑
-- iOS 代码只负责 HealthKit 采集和 HTTP POST，不做分析
-- 不把真实个人健康数据提交到 git
-- `docs/working.md` 记录变更与踩坑结论
-- HealthKit 时间戳是 UTC，分析时需转换到用户时区（默认 `America/Los_Angeles`）
-- 分析直接读 SQLite，**不需要后端运行**。如果今天或昨天没有数据，提醒用户先打开 iOS app 同步
-
-## 数据 freshness 与 iOS client capability
-
-在支持 `health_quantification.export_all` 的 OpenCode iOS Car Mode 中，不要默认要求用户手工打开 Health Quantification。先用 `sleep daily --last-night --format json` 或目标类别的 daily/analyze 命令检查完成任务所需数据。
-
-- 数据已覆盖用户要求的时间段：直接分析，不请求导出。
-- 数据缺失或尚未覆盖最近一晚：返回一个 `health_quantification.export_all` client action，并说明需要同步哪段数据。
-- callback continuation 已声明本次 export 完成：重新读取 CLI 数据并继续原任务，不得再次请求相同 export 形成循环。
-- 当前 client 没有声明该 capability，或调用失败/过期：fallback 到提醒用户打开 iOS app，确认 Server URL 和 HealthKit 授权后执行 Export All。
-
-模型只请求稳定 capability 名和面向用户的 reason；不得生成 callback URL、Server URL、session ID 或任意 App URL。Health Quantification provider contract 见 `docs/ios_client_export_rfc.md`。
-
-## CLI 合同
-
-### 查询
-
-> **⚠️ `--metric` 只用于 `analyze` 命令，不用于 `daily`。** 且它的值必须精确匹配上方的 metric_type 表。用错名字（如 `hrv_sdnn`、`caffeine`、`alcohol`、`steps`）不会报错，只会静默返回空数据（count=0）。不确定时先查表，或直接 `sqlite3 data/health_quantification.db "SELECT DISTINCT metric_type FROM {table};"`。
+### 查询接口
 
 ```bash
 python -m health_quantification.cli doctor config
 python -m health_quantification.cli db init
-python -m health_quantification.cli sleep analyze --days 30 --format json|text
-python -m health_quantification.cli sleep daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli sleep daily --last-night --format json|text
-python -m health_quantification.cli sleep notes add --date YYYY-MM-DD --note "Free-form sleep context"
-python -m health_quantification.cli sleep notes get --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli vitals analyze --days 30 --metric resting_heart_rate --format json|text
-python -m health_quantification.cli vitals daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli body analyze --days 30 --metric body_mass --format json|text
-python -m health_quantification.cli body daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli lifestyle analyze --days 30 --metric dietary_caffeine --format json|text
-python -m health_quantification.cli lifestyle daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli activity analyze --days 30 --metric step_count --format json|text
-python -m health_quantification.cli activity daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli vitals analyze --days 30 --metric heart_rate --format json|text
-python -m health_quantification.cli vitals analyze --days 30 --metric active_energy_burned --format json|text
-python -m health_quantification.cli workouts analyze --days 30 --format json|text
-python -m health_quantification.cli workouts daily --date YYYY-MM-DD --format json|text
-python -m health_quantification.cli illness list --status active|resolved|all --format json|text
+python -m health_quantification.cli sleep analyze --days 30 --format json
+python -m health_quantification.cli sleep daily --date 2026-03-30 --format json
+python -m health_quantification.cli sleep daily --last-night --format json
+python -m health_quantification.cli sleep notes add --date 2026-03-30 --note "合成主观上下文备注"
+python -m health_quantification.cli sleep notes get --date 2026-03-30 --format json
+python -m health_quantification.cli vitals analyze --days 30 --metric resting_heart_rate --format json
+python -m health_quantification.cli vitals daily --date 2026-03-30 --format json
+python -m health_quantification.cli body analyze --days 30 --metric body_mass --format json
+python -m health_quantification.cli lifestyle analyze --days 30 --metric dietary_caffeine --format json
+python -m health_quantification.cli activity analyze --days 30 --metric step_count --format json
+python -m health_quantification.cli workouts analyze --days 30 --format json
+python -m health_quantification.cli illness list --status active --format json
 ```
 
-### 写入（AI 手动记录 / 对话触发）
+> **注意**：`--metric` 仅适用于 `analyze` 命令，不适用于 `daily` 命令。
 
-`daily` 返回的是该日期下该数据类型的聚合结果，不接收 `--metric`。例如 `vitals daily` 会返回当天已有的全部 vitals metric，`lifestyle daily` 会返回当天已有的 caffeine / alcohol 等条目聚合。
+### 写入接口 (单条数据与状态记录)
 
 ```bash
-python -m health_quantification.cli record lifestyle --metric dietary_caffeine --value 57 --unit mg --time "2026-03-31T12:00:00-07:00" --note "Costco Mexican Coke 500ml"
-python -m health_quantification.cli record body --metric body_mass --value 75.5 --unit kg
+python -m health_quantification.cli record lifestyle --metric dietary_caffeine --value 150 --unit mg --time "2026-03-31T12:00:00-07:00" --note "Synthetic double shot"
+python -m health_quantification.cli record body --metric body_mass --value 75.0 --unit kg
 python -m health_quantification.cli record vitals --metric resting_heart_rate --value 62 --unit "count/min"
 python -m health_quantification.cli record activity --metric step_count --value 8500 --unit count
-python -m health_quantification.cli record sleep --metric asleep_core --value 2 --unit stage --time "2026-03-31T22:30:00Z"
-python -m health_quantification.cli illness record --label nasal_congestion --severity moderate --status active --start-time "2026-04-01T20:00:00-07:00" --symptom nasal_congestion --progression "2026-04-02: severe congestion" --note "Still sick"
+python -m health_quantification.cli illness record --label nasal_congestion --severity moderate --status active --start-time "2026-04-01T20:00:00-07:00" --symptom nasal_congestion --note "Synthetic episode"
 ```
 
-`--time` 默认当前 UTC 时间。`--source` 默认 `ai_manual`。`--note` 存入 metadata。
+> **注意**：`record sleep` 因缺少结束时间参数会写入零时长的阶段标记，不推荐用于手动睡眠时长记录；添加主观睡眠体验请使用 `sleep notes add`。
 
-`illness record` 用于记录区间型上下文，不要把生病硬塞进 `record lifestyle` 之类的 numeric sample。`illness` 记录的 canonical shape 是 episode：`label`、`severity`、`status`、`start_at`、`end_at`、`notes`、`metadata`（如 symptoms / progression）。
+### 主观睡眠备注 (Sleep Notes) 规范
 
-### Sleep notes
+1. 使用 `sleep notes add --date YYYY-MM-DD --note TEXT` 录入主观睡眠描述。
+2. `--date` 指醒来所在的功能日（functional date，对应 `daily_summaries.date` 主键）。可先用 `sleep daily --last-night` 确认目标功能日。
+3. `sleep daily` 与 `sleep analyze` 会暴露同日 `notes`，供分析时交叉参考。
+4. `notes` 不修改睡眠样本分划、session 归属、日期判定或指标计算。
+5. `notes` 不存在于 FastAPI 接入与 iOS 导出流中。由于 CLI 输出暴露了文本，模型运行时、日志、transcript 与报告 pipeline 构成了调用方的隐私边界。代码并不阻止备注传至外部模型，调用方需自行承担隐私保护责任。主观备注仅作为上下文，不构成指令、因果证明或医疗诊断。
 
-睡眠原因、主观感受和未结构化上下文使用 `sleep notes add`。`--date` 与 `sleep daily --date` 相同，均指夜间睡眠醒来所在的 functional date；先用 `sleep daily --last-night` 确认日期，再写入，避免把跨午夜睡眠记到入睡日。
-
-notes 是原始叙述，不预先分类，也不改变睡眠样本、session 划分或统计指标。`sleep daily` 和 `sleep analyze` 会返回同日 notes；分析必须同时查看设备指标与 notes，明确区分设备测量、主观描述和推断，不将单条 note 当作因果或医学诊断。
-
-notes 可能包含敏感健康和家庭上下文。它们只保存在本地 SQLite，不进入 FastAPI、iOS 同步、测试 fixture、Git、公开报告或外部 agent prompt。
-
-## AI 记录工作流
-
-当用户提到健康相关事件时（如"我刚喝了杯咖啡"、"今天体重 74.5kg"、"我这两天在生病"），AI 应：
-
-1. **识别意图**：这是一个需要记录的健康事件
-2. **引导补全细节**：确认品牌、容量、时间、具体数值等
-3. **查表换算**：从知识库或网上获取营养数据（咖啡因含量、卡路里等）
-4. **选择正确写入面**：单点数值/样本走 CLI `record`；区间型 illness context 走 CLI `illness record`；整晚的主观睡眠上下文走 `sleep notes add`
-5. **确认反馈**：告知用户已记录的数值和来源
-
-### Illness episode 记录规则
-
-- 生病是**区间型 context**，不是单个 metric，也不是 daily boolean。
-- 优先记录 episode 的开始时间；结束前保持 `status=active` 且 `end_at=null`。
-- 症状列表放 `--symptom`，病程变化放 `--progression`，主观补充说明放 `--note`。
-- 如果用户只给了模糊标签，`label` 可以先用自由文本（如 `nasal_congestion`、`flu_like`、`unknown`），不要为了 taxonomy 过早复杂化。
-- 后续恢复时，用同一个 `source_id` 或上层更新逻辑把 episode 标成 `resolved` 并补 `end_at`。
-
-### 示例对话
-
-用户："我刚喝了瓶可乐"
-AI："帮你记录一下。确认几个细节：
-- 哪种可乐？普通可口可乐（34mg/355ml）还是墨西哥可乐（Costco 500ml 玻璃瓶装，约 48mg 咖啡因）？
-- 大概什么时间喝的？"
-
-用户："墨西哥可乐，Costco 买的，12 点左右"
-AI：记录完成。墨西哥可乐 500ml，约 48mg 咖啡因，时间 12:00 PT。
-
-### 遇到新物品
-
-当用户提到的食物/饮料不在知识库中时：
-
-1. 上网搜集营养数据（优先 USDA、产品官网、权威营养数据库）
-2. 向用户确认数据后，添加到知识库
-3. 后续相同物品直接查表，不再重复搜集
-
-## 知识库
+## AI 交互与换算规则
 
 ### 咖啡因换算
 
-优先沿用历史记录里的同一口径，不要每次重新估算。过去一个月已经形成的 standard practice：14g 浅烘 Arabica double shot 记 150mg；15g 拿铁/咖啡记 160-161mg。用户只说“15g 拿铁”时，默认写 161mg，并在 note 里保留原始剂量。
-
-| 物品 | 规格 | 咖啡因 | 来源/口径 |
-|------|------|--------|----------|
-| 浅烘 Arabica double shot | 14g beans | ~150mg | 当前基准 |
-| 浅烘拿铁/咖啡 | 15g beans | ~161mg | 按 14g→150mg 线性外推；历史记录主要用 160/161mg |
-| 普通可口可乐 | 355ml | 34mg | Wikipedia |
-| 普通可口可乐 | 250ml | ~24mg | 按 34mg/355ml 折算 |
-| 普通可口可乐 | 235ml | ~22.5-23mg | 按 34mg/355ml 折算 |
-| 墨西哥可乐 | 500ml 玻璃瓶 | ~48mg | Wikipedia / Caffeine Informer |
-| 健怡可乐（无咖啡因版） | 355ml | 0mg | 产品标签 |
+- 浅烘 Arabica double shot (14g 咖啡豆)：标准计 150mg。
+- 15g 咖啡/拿铁：线性折算计 ~161mg，并在 `--note` 中保留原始描述。
+- 355ml 可乐：~34mg；500ml 玻璃瓶可乐：~48mg。
 
 ### 酒精换算
 
-`dietary_alcohol` 记录纯酒精克数，单位固定用 `g`。有明确酒精度时用 `容量ml × ABV × 0.789`。用户给的是重量而不是容量时，可把 100g 酒/甜酒近似按 95-100ml 处理；若没有酒精度，必须在 note 里写清楚估算口径。
+- 记录单位固定使用 `g`，`metric_type` 必须为 `dietary_alcohol`。
+- 计算公式：`容量(ml) × ABV × 0.789`。例如 355ml 5% ABV 啤酒计 `355 × 0.05 × 0.789 ≈ 14g`。
 
-| 饮品 | 默认口径 | 纯酒精 |
-|------|----------|--------|
-| 普通啤酒 | 355ml, 5% ABV | ~14g |
-| 16oz 啤酒 | 473ml, 5% ABV | ~18.7g |
-| 355ml 高度啤酒 | 7.8-8% ABV | ~21.8-22.4g |
-| 一 shot 烈酒 | 约 44ml, 40% ABV | ~14g |
-| 贵腐酒/甜葡萄酒 | 100g, 默认 12% ABV | ~9g |
+### 生病状态记录 (Illness Episode)
 
-### 写入原则
+- 生病属于区间型上下文（Episode），使用 `illness record` 命令。
+- 字段包含 `label`、`severity`、`status`（active / resolved）、`start_time`、`end_time`。
 
-咖啡因永远写 `dietary_caffeine` + `mg`；酒精永远写 `dietary_alcohol` + `g`。不要写 `caffeine` 或 `alcohol`，这是历史遗留字段。用户给出的原始描述（比如“15g 拿铁”“250ml 可乐”“100g 贵腐酒”）放进 `--note`，数值字段只放统一换算后的 mg/g。
+## 分析与计算规则
 
-## 分析与报告
+1. **时区转换**：HealthKit 时间戳均为 UTC，分析层默认转为本地时区（默认 `America/Los_Angeles`）。
+2. **睡眠日期归属与昨晚定义**：
+   - 非午睡 session 归属至醒来当日的本地日期（功能日 functional date）。
+   - `sleep daily --last-night` 查找最近一个有夜间主睡眠的功能日，并返回该功能日的完整 metrics（包含主睡眠与午睡），由 AI 判断睡眠结构。
+3. **睡眠 Session 拆分**：相邻样本时间间隔大于 2 小时自动拆分为不同 Session，其中累积时长最长的为 Main Session。
+4. **步数多源数据融合**：若存在 Phone 与 Watch 重叠数据，按 `max(phone, watch) × 1.05` 估算日总步数，避免直接相加导致重复计算。
 
-AI 完全控制分析过程。典型工作流：
+## 调用约束
 
-1. 调用 CLI 获取 JSON 数据
-2. 睡眠分析时同时审阅同一 functional date 的 `notes`，并将设备指标、主观 context 和推断分开陈述
-3. 基于数据自由分析（趋势、异常、对比、交叉关联等）
-4. 生成可视化：使用 matplotlib 或调用 `artifacts/report.py` 生成 PNG 图表
-5. 撰写 Markdown 报告，图片引用使用相对路径
-
-### 用户偏好
-
-用户有很强的机器学习和统计学背景。分析报告中：
-- 可以使用精确的统计语言（偏相关系数、confidence interval、回归系数等）
-- 包含最关键的数值 evidence，但不要堆砌所有统计结果
-- 如果需要新的可视化，可以用 sub-agent 并行生成
-- 数据不放进报告，只放结论和洞察
-
-## 分析经验
-
-- **相关性分析比单独看均值更有价值**。多维度交叉分析优先于单维度描述性统计。
-- **Phase 2 的 `analyze` 需要指定 `--metric`**（如 `--metric resting_heart_rate`），不像 sleep 可以直接 `analyze --days 30`。workouts 的 `analyze` 不需要 `--metric`。
-- **步数数据的处理**：CLI 返回的是每条记录的值，需要先按天聚合出各 source 的日总步数。当 phone 和 watch 都是平时会随身携带的来源时，把它们视为对同一现实步数的重叠观测：**取 max(phone, watch) × 1.05 作为日步数估计**，不做跨 source 求和。乘 1.05 是因为绝大多数时间两个设备同时佩戴，但偶尔会出现一方没戴上的情况，造成约 5% 的漏计。只有在明确知道两个 source 覆盖的是互补时段、并非同时携带时，才考虑相加。
-- **HRV 的 Apple Watch 局限**：主要在睡眠中测量，短睡眠日数据可能不准确。
-- **可视化用 matplotlib 直接画**比 `artifacts/report.py` 更灵活。
-- **sleep 的 daily 分析中**：`total_sleep_hours` 包含主睡眠 + 午睡，`nap_hours` 单独报告午睡时长。bedtime/wake_time 只从主睡眠计算。
-
-## 从不同目录调用
-
-- **从项目目录** (`adhoc_jobs/health_quantification/`): 直接用 `.venv/bin/python -m health_quantification.cli ...`
-- **从 workspace 根目录**: 用 `adhoc_jobs/health_quantification/.venv/bin/python -m health_quantification.cli ...`，或先 `cd` 到项目目录
-
-## 已知限制
-
-- Apple Watch 午睡追踪精度低，通常只有 1 条 `asleep_unspecified`
-- `dietaryAlcohol` 用 raw value workaround，未经真机验证
-- iOS ATS 使用 `NSAllowsArbitraryLoads`（个人项目 + Tailscale 加密内网）
-
-## 踩坑记录（重要！）
-
-### metric_type 名称不直观，用错会静默返回空数据
-
-这是最高频的踩坑点。CLI `--metric` 必须用数据库里的精确字符串，不是人类直觉的名字。常见错误：
-- `--metric hrv_sdnn` → 实际是 `heart_rate_variability_sdnn`
-- `--metric caffeine` → 实际是 `dietary_caffeine`（AI 手动记录也要用这个，不要用 `caffeine`）
-- `--metric alcohol` → 实际是 `dietary_alcohol`
-- `--metric steps` → 实际是 `step_count`
-
-**不会报错，只返回 count=0 的空结果。** 如果你看到某天"无数据"但用户说有记录，首先检查 metric_type 名字是否正确。
-
-### 时区与日期归属
-
-- **所有 HealthKit 时间戳都是 UTC**。SQLite 里存的也是 UTC。
-- **CLI 分析层（metrics.py、sleep.py）已经做了本地时区转换**：`_to_local_date()` 将 UTC 时间戳转为本地日期。vitals、activity、workouts、lifestyle、body 的 `analyze/daily` 都是正确的。
-- **直接查数据库时不要用 UTC 日期判断"今天"**。例如 UTC 3/31 01:48 在 PT 是 3/30 18:48（昨天），直接 SQL 查 `date(start_at) = '2026-03-31'` 会把昨天的数据也拉出来。做分析时应该用 CLI 而不是直接查 DB。
-
-### 睡眠日期归属与"昨晚睡得怎么样"
-
-**这是最容易出错的地方。** sleep 的 daily 日期归属按 session 处理：先用时间 gap 拆成完整 session，非午睡 session 归到 `functional_date`，也就是醒来的本地日期；午睡 session 保持按 session 最早 `start_at` 的本地日期归属。一次 22:00 入睡、07:00 醒来的跨午夜睡眠，整个 session 归到 07:00 醒来的那天。
-
-**"昨晚"的定义（严格约定）**：用户说"昨晚睡得怎么样"时，指的是**最近一段夜间睡眠所在的功能日**。这段睡眠通常是昨天晚上开始、今天早上结束，但也允许用户在本地时间午夜后才真正入睡。CLI `--last-night` 返回该功能日的完整 day metrics，包含所有 sessions（主睡眠 + 补觉 + 午睡），不从中选一个代表。AI 看到 sessions 数组后自行判断是否碎片化。
-
-具体规则：
-- "昨晚睡得怎么样" → 用 `sleep daily --last-night`，它返回最近有夜间睡眠的 functional_date 的完整 day metrics（含全部 sessions）
-- headline 数字（bedtime、wake_time、total_sleep_hours）在多 session 情况下可能不直观，AI 应优先看 `sessions` 数组里的每段 session 指标
-- 如果 main session 的 bedtime 在 20:00 之前，说明它可能不是昨晚的睡眠，需要人工判断
-- "今天到现在怎么样" → vitals/lifestyle/activity 用 `--date 今天`，睡眠部分用 `--last-night`
-- **不要**把 `total_sleep_hours` 当作"昨晚睡了多久"的唯一指标，它包含了同一天所有 session（主睡眠 + 补觉 + 午睡）
-- **不要**直接用 SQL 查 `date(start_at)` 或 `date(end_at)` 来做 sleep 日期归属；正确逻辑需要先 session segmentation，再对非午睡 session 使用 functional_date，避免跨午夜睡眠被劈成两半或归到入睡日期
-
-CLI 合同：
-```bash
-# 查昨晚的睡眠（推荐）
-python -m health_quantification.cli sleep daily --last-night --format json
-# --last-night 返回最近有夜间睡眠的 functional_date 的完整 day metrics，含全部 sessions
-
-# 查某天的全部睡眠（含午睡）。日期指 functional_date：例如 5/2 查询 5/2 早上醒来的主睡眠
-python -m health_quantification.cli sleep daily --date 2026-05-02 --format json
-```
-
-### 睡眠分析
-
-- **主睡眠与午睡已通过 session segmentation 分离**：同一天的 samples 按时间 gap（>2h）拆分为多个 session，asleep 时间最长的为主睡眠，其余为午睡。
-- `total_sleep_hours` = 主睡眠 + 午睡。bedtime/wake_time/stage_hours 只从主睡眠计算。
-- **bedtime/wake_time 的计算**：bedtime 只从 start_hour >= 16 的 sample 中取（傍晚/晚上），wake_time 只从 start_hour <= 12 的 sample 中取（清晨/上午）。如果 session 没有 evening sample（凌晨入睡），bedtime fallback 到 session 最早的 start_at。
-- 纯午睡日（没有过夜睡眠）`has_nap=True` 但 `nap_hours=0.0`（因为唯一 session 就是 main session）。
-
-### 睡眠窗口与 Vitals 交叉分析（重要踩坑！）
-
-**绝对不要用 `GROUP BY date(start_at, '-7 hours')` 来生成 sleep window。** 这种写法会把跨午夜的两晚合并成一个 24 小时的巨大窗口（比如 3/27 07:06 到 3/28 07:12），导致白天清醒时间的 vital 被错误地标记为"sleep"。
-
-正确做法是使用 session splitting 逻辑（和 `sleep.py` 的 `_split_into_sessions` 一致）：
-
-1. 从 `sleep_samples` 取所有样本，按 `start_at` 排序
-2. 相邻样本 gap > 2 小时则拆分为新 session
-3. 过滤掉过短（<3h）和过长（>12h）的 session
-4. 每个 session 的 `(min(start_at), max(end_at))` 才是真正的睡眠窗口
-
-**反例（错误）**：
-```sql
--- ❌ 会产生 24h 巨大窗口，sleep/awake 分类完全错乱
-SELECT MIN(start_at), MAX(end_at)
-FROM sleep_samples
-GROUP BY date(start_at, '-7 hours')
-```
-
-**正例（正确）**：在 Python 中做 session splitting，过滤后用 timestamp range 做 `is_sleep()` 判断。直接写 SQL 无法可靠实现 session splitting。
-
-### 配置与部署
-
-- **`config.py` 的 `db_path` 使用绝对路径**（基于 `__file__` 解析项目根目录），不依赖 cwd。环境变量 `HEALTH_QUANT_DB_PATH` 可以覆盖。
-- **CLI 和 FastAPI server 读写同一个 DB 文件**。远端（Tailscale）就是本机，SSH 只是连接 localhost。不存在"两个独立数据库"的情况。
-- **pm2 重启后新代码才生效**。改了 Python 代码后需要 `pm2 restart health-quant-backend`。
-- **iOS app 需要重新编译部署到真机才能获取新数据类型**。模拟器 build 不等于真机上有新代码。
+- 本地环境调用：`.venv/bin/python -m health_quantification.cli ...`
+- 根目录调用：`adhoc_jobs/health_quantification/.venv/bin/python -m health_quantification.cli ...`
+- 新增及修改的测试/文档示例必须采用合成（synthetic）数据。数据落盘文件（`data/*.db`）与报告文件需保持本地隔离，不得提交至公共仓库。

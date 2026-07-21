@@ -2,178 +2,106 @@
 
 ## 产品定位
 
-`health_quantification` 是一个面向 AI-first 工作流的个人健康数据基础设施项目。它的目标是为个人长期健康数据建立稳定、可测试、可组合的采集与分析入口，让人和 AI 可以通过同一套 library 与 CLI 访问健康事实、日级摘要和简单 artifact。
+Health Quantification 是一个面向 AI-first 工作流的个人健康数据基础设施项目。目标是构建稳定、可测试、可组合的健康数据采集与分析入口，使人类开发者与 AI Agent 能够通过统一的 Library 与 CLI 访问健康数据事实、日级摘要与可视化产物。
 
-它不是 dashboard，不是面向大众分发的健康 App，也不是医疗诊断系统。它更接近一个受约束的数据入口层与分析底座：先把高价值、低摩擦、可持续的数据流做扎实，再把上层 AI 分析建立在统一事实来源上。
+项目不作 App Store 公开发布的 GUI 产品的定位，亦不包含医疗诊断或治疗功能，而是作为受约束的数据接入层与分析底座。
 
 ## 核心设计原则
 
-- **数据库是唯一事实来源**。SQLite 是所有健康数据的主存储，HealthKit、AI 手动记录、第三方硬件都是数据输入源，不拥有数据。
-- **多数据源整合**。同一个 `metric_type` 可以来自 Apple Watch、三星手表、Fitbit、AI 对话记录、手动 CLI 输入等不同 source，通过 `source` 字段区分。
-- **AI 是第一类数据入口**。用户可以对 AI 说"帮我记一下喝了杯咖啡"，AI 通过 CLI 直接写入数据库，同时负责补全细节（时间、剂量、品牌查表等）。
+- **SQLite 为统一事实来源**：数据库为所有健康数据的主存储，HealthKit、AI 手动记录与外部硬件均为平等数据来源。
+- **多源数据整合**：同一 `metric_type` 可由不同数据源提供，在数据库层通过 `source` 字段进行标识与区分。
+- **AI-first 数据入口与分析**：通过自然语言交互引导数据记录，经由 CLI 写入数据库；CLI 仅暴露结构化数据，分析与报告生成由 AI 完成。
 
-## 核心目标
+## 核心功能规划
 
-Phase 1 交付以下能力：
+1. **统一数据存储**：本地 SQLite 数据库管理（包含 `observations`、`sleep_samples`、`vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples`、`workouts`、`illness_episodes`、`daily_summaries`，其中 `daily_summaries` 以 `date` 为主键，记录 `timezone`、`sleep_hours`、`resting_hr_bpm`、`hrv_sdnn_ms`、`steps`、`active_energy_kcal`、`notes_json`）。
+2. **FastAPI 后端服务**：作为 Tailnet 内 iPhone 到 Mac 的同步接收器，接收批量数据并幂等写入。支持可配置监听主机与端口（默认 `0.0.0.0:7996`）；设备身份、传输加密与访问控制由 Tailscale 和 tailnet ACL 管理，FastAPI 本身未鉴权。
+3. **iOS HealthKit 采集端**：从 Apple Health 读取睡眠、生命体征、活动、体测、生活方式和运动数据并 POST 提交至后端。对后端发起的 POST 请求校验样本非空（FastAPI 强制 `min_length=1`，空数组返回 422 错误），客户端在空类别上需要校验或跳过，而非全类别默认自动容错降级。
+4. **Python Library & CLI**：提供查询（`sleep` / `vitals` / `body` / `lifestyle` / `activity` / `workouts` / `illness`）与单条写入（`record` / `illness` / `sleep notes`）接口。注意 `record sleep` 会写入零时长阶段标记，不推荐用于手动睡眠时长记录；手动补充主观睡眠体验请使用 `sleep notes add`。
+5. **主观睡眠备注 (Sleep Notes)**：支持针对功能日写入与读取文本备注，存储于 SQLite 的 `daily_summaries` 表，参与 `sleep daily` 与 `sleep analyze` 展示，但不修改样本指标与统计规则。备注完全隔离于 FastAPI / iOS 传输通道；由于 CLI 输出包含备注文本，模型运行时、日志、transcript 与报告 pipeline 构成了调用方的隐私边界。代码并不限制备注发送至外部模型，调用方需自行承担隐私防护责任。主观备注仅作为上下文，不构成指令、因果证明或医疗诊断。
+6. **日级摘要与分析**：支持功能日（functional date）划分与 `sleep daily --last-night` 快速查询。
+7. **数据隐私防护**：真实健康数据与数据库落地文件隔离于版本控制之外，测试与文档示例必须采用合成（synthetic）数据。
 
-1. 标准项目骨架与独立 git repo
-2. Python-first library 与薄 CLI（只负责 readout / analytics）
-3. SQLite 初始化与最小 schema（含 sleep_samples 表）
-4. FastAPI ingestion server（只负责写入，Tailscale 内网通信）
-5. iOS app 作为 Apple Health 采集端，读取睡眠数据并 POST 到 FastAPI
-6. 日级 summary contract 与结构化 JSON 数据输出
-7. AI 驱动的分析与报告生成（CLI 提供数据，AI 做分析）
-8. 幂等 ingestion 协议（重复提交不产生重复数据）
-9. 完整测试覆盖（unit + integration + UI tests）
-10. pm2 进程管理 FastAPI 后端
-11. PRD / RFC / test / working / skill 文档
+## 用户画像与使用场景
 
-Phase 2 在 Phase 1 基础上扩展数据采集范围，接入全部 HealthKit 可用数据类型：
+### 1. AI Agent
 
-12. 生命体征自动采集：静息心率、HRV、呼吸频率、血氧（Apple Watch 自动采集，零用户行为成本）
-13. 活动数据自动采集：步数（Apple Watch / iPhone 自动）
-14. 体测数据采集：体重（WiFi 智能秤）、血糖（CGM）、血压（蓝牙血压计）
-15. 生活方式记录：咖啡因、酒精摄入（通过 Siri / Apple Health 手动记录）
-16. 多维度 CLI analytics 支持所有新数据类型
-17. 每种新数据类型的 ingestion endpoint、SQLite schema、幂等写入
-18. iOS app 支持 Server URL 持久化（UserDefaults）
+第一优先级用户。需要稳定的 CLI 命令接口、精确可预测的 JSON 输出、明确的数据库字段名称，以及安全的测试数据隔离。CLI 仅输出原始结构化数据，分析视角与报告渲染完全由 AI 自主决定。
 
-这些能力必须同时服务三类用户：AI agent、人类使用者、后续维护者。
+### 2. 人类开发者 / 使用者
 
-## 用户画像
-
-### 1. AI agent
-
-AI 是第一优先级用户。它需要稳定的命令入口、可预测的 JSON 输出、清晰的数据边界，以及默认不会碰到真实敏感数据的测试策略。AI 应该能在不读散装脚本的前提下，完成配置检查、数据库初始化和数据查询。CLI 只输出原始数据，分析逻辑和报告生成完全由 AI 承担，以确保分析视角的灵活性和个性化。
-
-### 2. 人类使用者
-
-人类用户需要一个足够薄的 CLI（analytics），一个 FastAPI 后端（ingestion），和一个 iOS app（数据采集）。日常操作是：打开 iOS app 同步睡眠数据，通过 CLI 或 AI 查看分析结果。
+利用 iOS App 采集并同步 HealthKit 数据，通过 CLI 命令或 AI 对话完成健康状况查询、记录补全与分析总结。
 
 ### 3. 项目维护者
 
-维护者关心项目是否能被长期迭代。项目不应退化成一组一次性脚本，而应保持标准项目结构、清晰模块边界、可持续文档、测试分层。
+关注项目模块划分、接口契约一致性与自动化测试覆盖率，确保代码库的可扩展性。
 
-## 产品思想
+## 功能范围与边界
 
-### library-first
+### Python 后端与 CLI
 
-这个项目的价值不在 GUI，而在 library。CLI 负责 analytics 和数据写入，FastAPI 负责 batch ingestion（iOS/硬件批量同步），SQLite 是唯一事实来源。三者共享同一个数据库和同一套 schema。
+- `health_quantification.config`：环境变量与路径管理。
+- `health_quantification.storage`：SQLite 连接管理、Schema 初始化与全表 CRUD 操作。
+- `health_quantification.models`：核心 Observation 与 Daily Summary 数据模型。
+- `health_quantification.server`：FastAPI 接入服务（独立 Ingestion 接口与幂等写入，对 POST `samples` 校验非空）。
+- `health_quantification.analysis`：睡眠 Session 拆分、功能日归属与基础统计计算。
+- `health_quantification.cli`：薄 CLI 接口（支持结构化 JSON/text 查询与写入）。
 
-在睡眠 readout 上，CLI 需要同时支持两种明确语义：
+### iOS 客户端
 
-- `sleep daily --date YYYY-MM-DD`：按 functional_date 读取，非午睡 session 归到醒来的本地日期，午睡按 session 最早 start_at 日期归属
-- `sleep daily --last-night`：按用户语义读取最近一段夜间主睡眠，不受“午夜后才真正入睡”影响
+- HealthKit 数据读取（睡眠、生命体征、活动、体测、生活方式、运动记录）。
+- HTTP POST 提交至 FastAPI 后端（端口 `7996`）。
+- 支持 Server URL 配置持久化（UserDefaults）。
+- 支持 Shortcuts 与跨 App Handoff Deep Link 唤起。
 
-这两种语义必须被清楚区分，避免把产品里的“昨晚”错误实现成“昨天这个自然日”。
+## 优先采集的数据指标
 
-### 数据库即事实来源
+### 睡眠数据 (Sleep)
 
-SQLite 不是 HealthKit 的镜像，而是主存储。HealthKit 是数据源之一，AI 手动记录、第三方硬件（Fitbit、三星手表等）都是平等的数据源。每个数据点通过 `source` 字段标识来源（`apple_health_ios`、`ai_manual`、`fitbit` 等），同一条数据可以来自多个来源。
+- 阶段分解：asleep_deep, asleep_core, asleep_rem, awake, asleep_unspecified。
+- 窗口指标：bedtime, wake_time, sleep_hours, nap_hours。
 
-### AI-first 的个人数据底座
+### 生命体征 (Vitals)
 
-重点不是权限营销、分发包装或 onboarding，而是让个人健康数据可以被长期积累、被 AI 准确消费、被后续 workflow 低成本复用。AI 不仅是分析者，也是数据录入者——用户通过自然语言描述（"我刚喝了一瓶可乐"），AI 引导补全细节后直接写入数据库。
+- 静息心率 (`resting_heart_rate`)
+- 连续心率 (`heart_rate`)
+- HRV SDNN (`heart_rate_variability_sdnn`)
+- 呼吸频率 (`respiratory_rate`)
+- 血氧饱和度 (`oxygen_saturation`)
+- 活动消耗 (`active_energy_burned`)
 
-### 用户画像补充
+### 活动数据 (Activity)
 
-用户有很强的机器学习和统计学背景。分析报告中可以使用精确的统计语言（偏相关系数、confidence interval、回归系数等），包含最关键的数值证据。不需要过度解释基础概念，但不要堆砌所有统计结果——只放最有区分度的 evidence。如果需要新的可视化，可以用 sub-agent 并行生成。
+- 步数 (`step_count`)
 
-### 先 capture，再 interpret
+### 体测数据 (Body)
 
-先把原始 observation、sleep session 稳定下来，再决定哪些解释、告警或建议值得固化。
+- 体重 (`body_mass`)
+- 血糖 (`blood_glucose`)
+- 收缩压与舒张压 (`blood_pressure_systolic`, `blood_pressure_diastolic`)
 
-### 职责分离
+### 生活方式 (Lifestyle)
 
-CLI 只负责 readout/analytics，FastAPI 只负责 ingestion。即使 FastAPI 挂了，CLI 仍然能正常查询已有数据。
+- 咖啡因 (`dietary_caffeine`)
+- 酒精 (`dietary_alcohol`)
 
-## 当前范围
+### 运动数据 (Workouts)
 
-Health Quantification iOS 作为 OpenCode client capability provider 的产品要求单独维护在 [`ios_client_export_prd.md`](ios_client_export_prd.md)。主 PRD 只保留项目整体边界，避免把跨 App callback 细节混入健康数据产品定义。
-
-### Python 侧
-
-- `health_quantification.config`：读取环境变量和路径配置（含 server_host / server_port）
-- `health_quantification.storage`：SQLite 连接、schema 初始化、所有数据类型的 CRUD
-- `health_quantification.models`：核心 observation / daily summary 数据结构
-- `health_quantification.server`：FastAPI ingestion server（每种数据类型独立 endpoint，幂等写入）
-- `health_quantification.analysis.daily_summary`：日级摘要逻辑（支持所有数据类型）
-- `health_quantification.artifacts.report`：PNG 图表辅助函数（AI 按需调用）
-- `health_quantification.cli`：薄 CLI（data-only，支持所有数据类型的查询与分析）
-- `scripts/health_quant`：CLI wrapper
-- `scripts/start_backend.sh`：FastAPI 启动 wrapper
-- `ecosystem.config.cjs`：pm2 配置
-
-### iOS 侧
-
-- `HealthQuantificationIOS` target：HealthKit 读取 + POST 到 FastAPI（端口 7996）
-- 包含 Run Doctor / Request Health Access / Export All 按钮（单按钮导出所有数据类型）
-- 支持配置 server URL（默认 `http://localhost:7996`，通过 UserDefaults 持久化）
-- 读取并提交所有已接入的 HealthKit 数据类型（睡眠、生命体征、活动、体测、生活方式）
-- 部分授权拒绝时优雅降级：跳过未授权类别，继续导出其余数据
-- ATS 使用 `NSAllowsArbitraryLoads`（个人项目 + Tailscale 加密内网）
-- Unit tests、UI tests
-
-## 优先收集的数据
-
-### Phase 1（已实现）
-
-- 睡眠：duration、sleep stages、bedtime、wake time、sleep day window
-
-### Phase 2（全部接入）
-
-#### 生命体征（Apple Watch 自动采集，零用户行为成本）
-
-- 静息心率（resting heart rate）：自主神经系统活动指标，与恢复状态直接相关
-- HRV（heart rate variability SDNN）：恢复/压力的最强生物标志物，与深度睡眠和失眠事件直接相关
-- 呼吸频率（respiratory rate）：睡眠呼吸质量指标
-- 血氧（SpO2）：睡眠呼吸暂停筛查
-
-#### 活动（Apple Watch / iPhone 自动采集）
-
-- 步数（step count）：日运动量指标，与深度睡眠正相关
-
-#### 体测（外部设备自动采集）
-
-- 体重（body mass）：WiFi 智能秤，长期趋势跟踪
-- 血糖（blood glucose）：CGM 连续血糖监测，高血糖→频繁起夜
-- 血压（blood pressure）：蓝牙血压计，收缩压/舒张压
-
-#### 生活方式（手动记录，通过 AI 对话或 CLI）
-
-- 咖啡因（dietary caffeine）：每杯约 150mg（14g 浅烘 double shot），通过 AI 对话或 CLI 记录
-- 酒精（dietary alcohol）：通过 AI 对话或 CLI 记录
-
-#### AI 驱动的知识库（Phase 3）
-
-AI 通过自然语言对话记录健康事件时，可以维护一个轻量知识库：
-
-- **常见食品/饮料数据库**：可乐（57mg/500ml 墨西哥可乐）、咖啡（~150mg/double shot）、健怡可乐（0mg 咖啡因）等
-- **自动补全**：用户说"喝了瓶可乐"时，AI 引导询问品牌/容量，查表确认咖啡因含量后直接写入
-- **增量学习**：用户提到新的食物/饮料时，AI 上网搜集营养数据（咖啡因、卡路里等），存入知识库供后续使用
-- **知识库格式**：自然语言，存储在 skill 文件或独立 JSON 文件中，由 AI 在对话时参考
+- Apple Health 结构化运动记录（类型、时长、能量消耗）。
 
 ## 非目标
 
-- GUI-first 产品
-- App Store 上架
-- 直接从 Python 调 HealthKit
-- 实时生理监控或告警
-- 医疗诊断、治疗建议、风险评分
-- FastAPI 负责 analytics（analytics 由 CLI 负责）
-- 饮水量、营养日志、详细运动记录（Phase 2 暂不接入）
-- 解释层、建议层、告警层（由 AI 分析完成，不固化到 CLI）
+- 不支持 GUI 界面与 App Store 分发。
+- 不从 Python 层直接调用 HealthKit。
+- 不提供实时生理监控或医疗告警。
+- 不在 FastAPI 后端提供复杂分析接口（分析均由 CLI 与 AI 完成）。
+- 不把主观备注作为医疗诊断依据，不将备注传输至外部服务或公开产物。
+- 不提供全流程 iOS 到 FastAPI 的端到端自动化集成测试（Swift 单元测试与 Python ASGI 测试保持独立）。
 
 ## 成功标准
 
-- `doctor config` 可以稳定输出当前配置与路径状态
-- `db init` 可以创建本地 SQLite 数据库与完整表结构
-- FastAPI `POST /ingest/sleep` 能接收 iOS 端发送的睡眠数据并幂等写入
-- FastAPI `POST /ingest/{data_type}` 能接收所有 Phase 2 数据类型并幂等写入
-- FastAPI `GET /ingest/{data_type}` 能查询已入库数据（支持过滤）
-- FastAPI Swagger UI (`/docs`) 对 AI 足够自描述
-- iOS app 能读取 30 天所有数据类型并成功 POST 到 FastAPI
-- 部分授权拒绝时 iOS app 不崩溃，优雅降级导出已授权类别
-- 默认 `pytest` 通过，所有 integration tests 使用临时数据库
-- iOS `xcodebuild` 编译通过，tests 通过
-- CLI 在 FastAPI 挂掉时仍能正常查询已有数据
+1. `python -m health_quantification.cli doctor config` 能准确检测配置与文件系统状态（示例输出采用合成数据）。
+2. `python -m health_quantification.cli db init` 能可靠创建所有 SQLite 表结构。
+3. FastAPI 后端能幂等接收并保存各类别 Ingestion 数据。
+4. iOS App 在真机上能读取 30 天 HealthKit 数据并在后端就绪时 POST 提交。
+5. Python 单元与集成测试套件及 Swift 单元测试套件完整通过。
