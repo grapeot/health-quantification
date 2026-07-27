@@ -17,6 +17,9 @@ data/exports/*
 
 # Private health discussions — never commit
 private_discussions/
+
+# Personal health-to-e-ink orchestration; not part of the public package.
+private_cli/
 dist/
 build/
 *.egg-info/
