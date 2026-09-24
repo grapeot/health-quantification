@@ -42,7 +42,7 @@ final class HealthKitService {
         runDoctor()
 
         guard !isUITestMockHealthDataAvailable else {
-            authorizationState = "granted"
+            authorizationState = "request_completed"
             lastUpdated = Self.isoTimestamp(Date())
             appendLog(
                 title: "requestHealthAccess",
@@ -82,7 +82,7 @@ final class HealthKitService {
                     return
                 }
 
-                self.authorizationState = success ? "granted" : "denied"
+                self.authorizationState = success ? "request_completed" : "request_cancelled"
                 self.appendLog(
                     title: "requestHealthAccess",
                     payload: [
@@ -669,7 +669,7 @@ final class HealthKitService {
         return records
     }
 
-    private func readTypesForExport() -> Set<HKObjectType> {
+    func readTypesForExport() -> Set<HKObjectType> {
         var readTypes: Set<HKObjectType> = []
 
         if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {

@@ -8,7 +8,8 @@
 
 - iOS 端在现有 vitals 管线中扩充四项 HealthKit 指标采集：`sleeping_breathing_disturbances`（`count`）、`sleeping_wrist_temperature`（`degC`）、`heart_rate_variability_rmssd`（`ms`，本地 SDK 缺少对应命名符号，使用 runtime raw identifier 获取）及 `vo2_max`（`ml/(kg*min)`）。
 - 后端支持接收上述新增指标，合成 ASGI 测试与 Swift 构建已通过。
-- 真机导出尚未完成验证，待真机测试通过后再合并。
+- PR 合并后已完成真机全量导出及本地数据库回读；四项新增 vitals 指标的单位、数量与来源样本 ID 均已核对。
+- 移除临时 Type Audit 和 Verify Health Metrics 按钮，权限请求范围收敛到实际导出类型；模拟器单测与 UI 测试通过。使用 `devicectl --payload-url` 在真机触发导出，后端 sleep、vitals、activity、workouts 写入时间均推进；旧的系统授权不会因代码收窄而自动撤销。
 
 ### 2026-07-21 (Daily Sleep Notes)
 

@@ -5,6 +5,26 @@ import XCTest
 
 final class HealthKitServiceTests: XCTestCase {
     @MainActor
+    func testReadAuthorizationIncludesOnlyExportedTypes() {
+        let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
+            .restingHeartRate, .heartRate, .heartRateVariabilitySDNN,
+            HKQuantityTypeIdentifier(rawValue: "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD"),
+            .respiratoryRate, .appleSleepingBreathingDisturbances,
+            .appleSleepingWristTemperature, .vo2Max, .oxygenSaturation,
+            .activeEnergyBurned, .bodyMass, .bloodGlucose,
+            .dietaryCaffeine, HKQuantityTypeIdentifier(rawValue: "HKQuantityTypeIdentifierDietaryAlcohol"),
+            .bloodPressureSystolic, .bloodPressureDiastolic, .stepCount,
+        ]
+        var expected = Set(quantityIdentifiers.compactMap { HKObjectType.quantityType(forIdentifier: $0) as HKObjectType? })
+        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            expected.insert(sleep)
+        }
+        expected.insert(HKWorkoutType.workoutType())
+
+        XCTAssertEqual(HealthKitService().readTypesForExport(), expected)
+    }
+
+    @MainActor
     func testStageNameMapsAllKnownValuesAndUnknown() {
         XCTAssertEqual(HealthKitService.stageName(for: HKCategoryValueSleepAnalysis.inBed.rawValue), "in_bed")
         XCTAssertEqual(HealthKitService.stageName(for: HKCategoryValueSleepAnalysis.awake.rawValue), "awake")
