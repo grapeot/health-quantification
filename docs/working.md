@@ -11,6 +11,11 @@
 - PR 合并后已完成真机全量导出及本地数据库回读；四项新增 vitals 指标的单位、数量与来源样本 ID 均已核对。
 - 移除临时 Type Audit 和 Verify Health Metrics 按钮，权限请求范围收敛到实际导出类型；模拟器单测与 UI 测试通过。使用 `devicectl --payload-url` 在真机触发导出，后端 sleep、vitals、activity、workouts 写入时间均推进；旧的系统授权不会因代码收窄而自动撤销。
 
+### 2026-09-24 (iOS 只读体能诊断工件)
+
+- 新增受限的 `physical-effort` URL 诊断路由与 Mac 探针脚本；app 将样本数、MET 单位和分布摘要原子写入受文件保护的私有缓存 JSON，不传原始样本，也不向后端发送数据。旧工件在后续诊断运行时按 24 小时期限清理。
+- 已通过模拟器 URL 解析/工件测试和真机完整构建安装、沙盒 JSON 取回；`--skip-build-install` 向原有 app 进程派发新 URL 并取得另一份对应 `run_id` 的结果。测试产物只保留在 Git 忽略的目录；系统权限弹窗仍需本人确认。
+
 ### 2026-07-21 (Daily Sleep Notes)
 
 - 新增 `sleep notes add/get`，以 functional date 将自由文本上下文存入 `daily_summaries.notes_json`。

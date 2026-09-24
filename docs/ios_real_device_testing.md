@@ -55,3 +55,17 @@ sqlite3 -readonly data/health_quantification.db \
 - Check `/health` again, and distinguish an app dispatch failure from a phone-to-backend connection failure (especially a stale `localhost` URL).
 
 If no evidence appears after launch, inspect the strict URL parser, permission/query errors, and the saved server URL. A manual tap of `Export All Data` can isolate deep-link delivery from HealthKit or network issues, but is a fallback, not a passed headless test. Never infer success from `devicectl` exit code alone. Preserve only minimal, ignored local QA evidence.
+
+## Read-Only Diagnostic Artifact
+
+The Debug-only diagnostic harness queries only the allowlisted `physical-effort` HealthKit type, produces a small local aggregate, and does **not** send samples to the backend. From the project root, run the full build/install/trigger/retrieval cycle with:
+
+```bash
+.venv/bin/python scripts/ios_probe.py --device '<paired-phone>' --days 30
+```
+
+Use `--skip-build-install` to send a fresh URL to an already-installed app without reinstalling. This path was verified on a physical phone, including delivery to a running process without changing its PID. The app accepts only `healthquantification://diagnostics?kind=physical-effort&run_id=<UUID>&days=<1-30>`; invalid/extra parameters are rejected rather than clamped.
+
+The app writes `Library/Caches/Diagnostics/<UUID>.json` atomically, with iOS Complete File Protection. The host polls `devicectl device copy from --domain-type appDataContainer` and places the result under ignored `tmp/ios_device_qa/diagnostics/<UUID>/result.json`, verifying the matching run ID, schema and status. The file contains only sample count, MET unit, min/median/p90/max, a generation timestamp and fixed error code when needed: **no individual samples or source/device names**. Files older than 24 hours are removed on a later diagnostic run; the host serializes runs with a local lock.
+
+If HealthKit requires first-time consent, only the user can approve the system sheet. A `no_data` result does not distinguish unavailable data from denied read permission; an error includes a bounded status code. `devicectl device process launch --console` is optional troubleshooting for a newly launched process, not an Android-style logcat or a reliable completion channel for warm app URLs. This diagnostic neither calls `export-all` nor writes to SQLite.
