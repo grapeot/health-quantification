@@ -252,6 +252,35 @@ def test_post_endpoint_returns_counts(
     run_async_test(tmp_path, assertion)
 
 
+def test_new_vitals_round_trip_and_upsert(tmp_path: Path) -> None:
+    metrics = [
+        ("sleeping_breathing_disturbances", "count", 2.0),
+        ("sleeping_wrist_temperature", "degC", 35.8),
+        ("heart_rate_variability_rmssd", "ms", 48.0),
+        ("vo2_max", "ml/(kg*min)", 42.0),
+    ]
+
+    async def assertion(client: AsyncClient) -> None:
+        payload = build_vitals_payload()
+        template = cast(list[dict[str, object]], payload["samples"])[0]
+        payload["samples"] = [
+            {**template, "source_id": f"synthetic-{i}", "metric_type": metric, "unit": unit, "value": value}
+            for i, (metric, unit, value) in enumerate(metrics)
+        ]
+        first = await client.post("/ingest/vitals", json=payload)
+        second = await client.post("/ingest/vitals", json=payload)
+        assert first.status_code == second.status_code == 200
+        assert first.json()["total_samples"] == second.json()["total_samples"] == 4
+        for metric, unit, value in metrics:
+            response = await client.get("/ingest/vitals", params={"metric_type": metric})
+            assert response.status_code == 200
+            sample = response.json()[0]
+            assert sample["unit"] == unit
+            assert sample["value"] == value
+
+    run_async_test(tmp_path, assertion)
+
+
 @pytest.mark.parametrize(
     ("endpoint", "payload_builder", "expected_total"),
     [

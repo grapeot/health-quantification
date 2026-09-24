@@ -4,6 +4,12 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-09-24 (四项 HealthKit 指标接入)
+
+- iOS 端在现有 vitals 管线中扩充四项 HealthKit 指标采集：`sleeping_breathing_disturbances`（`count`）、`sleeping_wrist_temperature`（`degC`）、`heart_rate_variability_rmssd`（`ms`，本地 SDK 缺少对应命名符号，使用 runtime raw identifier 获取）及 `vo2_max`（`ml/(kg*min)`）。
+- 后端支持接收上述新增指标，合成 ASGI 测试与 Swift 构建已通过。
+- 真机导出尚未完成验证，待真机测试通过后再合并。
+
 ### 2026-07-21 (Daily Sleep Notes)
 
 - 新增 `sleep notes add/get`，以 functional date 将自由文本上下文存入 `daily_summaries.notes_json`。
