@@ -202,6 +202,13 @@ final class HealthKitService {
         var records: [VitalsSampleRecord] = []
         for configuration in configurations {
             let quantitySamples = try await fetchQuantitySamples(days: days, type: configuration.type)
+            if ["sleeping_breathing_disturbances", "sleeping_wrist_temperature", "heart_rate_variability_rmssd", "vo2_max"].contains(configuration.metricType) {
+                appendLog(title: "fetchVitalsMetric", payload: [
+                    "metric_type": configuration.metricType,
+                    "samples": String(quantitySamples.count),
+                    "unit": configuration.unitLabel,
+                ])
+            }
             records.append(contentsOf: quantitySamples.map { sample in
                 VitalsSampleRecord(
                     sourceID: sample.uuid.uuidString,
@@ -705,8 +712,20 @@ final class HealthKitService {
             quantityConfiguration(identifier: .heartRateVariabilitySDNN, metricType: "heart_rate_variability_sdnn", unitLabel: "ms") { quantity in
                 quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
             },
+            quantityConfiguration(identifierRawValue: "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD", metricType: "heart_rate_variability_rmssd", unitLabel: "ms") { quantity in
+                quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            },
             quantityConfiguration(identifier: .respiratoryRate, metricType: "respiratory_rate", unitLabel: "count/min") { quantity in
                 quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            },
+            quantityConfiguration(identifier: .appleSleepingBreathingDisturbances, metricType: "sleeping_breathing_disturbances", unitLabel: "count") { quantity in
+                quantity.doubleValue(for: .count())
+            },
+            quantityConfiguration(identifier: .appleSleepingWristTemperature, metricType: "sleeping_wrist_temperature", unitLabel: "degC") { quantity in
+                quantity.doubleValue(for: .degreeCelsius())
+            },
+            quantityConfiguration(identifier: .vo2Max, metricType: "vo2_max", unitLabel: "ml/(kg*min)") { quantity in
+                quantity.doubleValue(for: HKUnit.literUnit(with: .milli).unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .minute())))
             },
             quantityConfiguration(identifier: .oxygenSaturation, metricType: "oxygen_saturation", unitLabel: "%") { quantity in
                 quantity.doubleValue(for: .percent()) * 100.0

@@ -30,6 +30,10 @@ CLI 的 `--metric` 参数直接对应数据库中的 `metric_type` 列。传入�
 | 静息心率 | `resting_heart_rate` | vitals | count/min |
 | 连续心率 | `heart_rate` | vitals | count/min |
 | HRV SDNN | `heart_rate_variability_sdnn` | vitals | ms |
+| Sleeping Breathing Disturbances | `sleeping_breathing_disturbances` | vitals | count |
+| Sleeping Wrist Temperature | `sleeping_wrist_temperature` | vitals | degC |
+| HRV RMSSD（与 SDNN 分开） | `heart_rate_variability_rmssd` | vitals | ms |
+| VO2 Max | `vo2_max` | vitals | ml/(kg*min) |
 | 呼吸频率 | `respiratory_rate` | vitals | count/min |
 | 血氧饱和度 | `oxygen_saturation` | vitals | % |
 | 活动消耗 | `active_energy_burned` | vitals | kcal |

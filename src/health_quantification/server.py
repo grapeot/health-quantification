@@ -40,7 +40,11 @@ VitalsMetricType = Literal[
     "resting_heart_rate",
     "heart_rate",
     "heart_rate_variability_sdnn",
+    "heart_rate_variability_rmssd",
     "respiratory_rate",
+    "sleeping_breathing_disturbances",
+    "sleeping_wrist_temperature",
+    "vo2_max",
     "oxygen_saturation",
     "active_energy_burned",
 ]
