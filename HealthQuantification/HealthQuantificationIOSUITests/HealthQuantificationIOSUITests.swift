@@ -28,6 +28,10 @@ final class HealthQuantificationIOSUITests: XCTestCase {
         app.launchArguments.append("UITEST_HEALTH_DATA_AVAILABLE_TRUE")
         app.launch()
 
+        XCTAssertFalse(app.buttons["typeAuditButton"].exists)
+        XCTAssertFalse(app.buttons["checkVitalsButton"].exists)
+        XCTAssertTrue(app.buttons["exportAllButton"].exists)
+
         app.buttons["runDoctorButton"].tap()
         XCTAssertTrue(app.staticTexts["healthDataAvailableLabel"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Available"].waitForExistence(timeout: 2))

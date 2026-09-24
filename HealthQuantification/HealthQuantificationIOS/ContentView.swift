@@ -189,28 +189,6 @@ struct ContentView: View {
                 .accessibilityIdentifier("requestHealthAccessButton")
 
                 ActionButton(
-                    title: "Verify Health Metrics",
-                    subtitle: "Inspect 30 days of vitals locally without uploading or modifying data.",
-                    icon: "waveform.path.ecg",
-                    style: .secondary,
-                    isPressed: activeAction == "checkVitals",
-                    isDisabled: activeAction == "checkVitals"
-                ) {
-                    activeAction = "checkVitals"
-                    Task {
-                        do {
-                            _ = try await model.fetchVitalsSamples(days: 30)
-                        } catch {
-                            exportStatusTitle = "Failed"
-                            exportStatusDetail = error.localizedDescription
-                            exportStatusTone = .failure
-                        }
-                        activeAction = nil
-                    }
-                }
-                .accessibilityIdentifier("checkVitalsButton")
-
-                ActionButton(
                     title: exportRuntime.isExporting ? "Exporting 30-Day Snapshot" : "Export All Data",
                     subtitle: exportRuntime.isExporting ? "Collecting and uploading sleep, vitals, body, lifestyle, activity, and workout samples" : "Send the last 30 days of samples to the configured backend",
                     icon: exportRuntime.isExporting ? "arrow.triangle.2.circlepath" : "square.and.arrow.up",

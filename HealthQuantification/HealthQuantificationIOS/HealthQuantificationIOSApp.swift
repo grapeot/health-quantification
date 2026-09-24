@@ -31,6 +31,19 @@ struct HealthQuantificationIOSApp: App {
     private func handleDeepLink(_ url: URL) {
         if let command = HealthExportDeepLinkParser.parse(url) {
             exportCommands.append(command)
+            return
         }
+        #if DEBUG
+        if let command = HealthDiagnosticDeepLinkParser.parse(url) {
+            Task {
+                let result = await model.physicalEffortDiagnostic(command)
+                do {
+                    _ = try HealthDiagnosticArtifactStore.save(result)
+                } catch {
+                    print("[diagnostic] artifact_write_failed")
+                }
+            }
+        }
+        #endif
     }
 }

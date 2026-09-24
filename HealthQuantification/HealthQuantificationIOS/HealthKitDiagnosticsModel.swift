@@ -42,7 +42,7 @@ final class HealthKitService {
         runDoctor()
 
         guard !isUITestMockHealthDataAvailable else {
-            authorizationState = "granted"
+            authorizationState = "request_completed"
             lastUpdated = Self.isoTimestamp(Date())
             appendLog(
                 title: "requestHealthAccess",
@@ -82,7 +82,7 @@ final class HealthKitService {
                     return
                 }
 
-                self.authorizationState = success ? "granted" : "denied"
+                self.authorizationState = success ? "request_completed" : "request_cancelled"
                 self.appendLog(
                     title: "requestHealthAccess",
                     payload: [
@@ -236,6 +236,45 @@ final class HealthKitService {
         )
         return records.sorted { lhs, rhs in
             lhs.recordedAt < rhs.recordedAt
+        }
+    }
+
+    func physicalEffortDiagnostic(_ command: HealthDiagnosticCommand) async -> HealthDiagnosticArtifact {
+        let generatedAt = Self.isoTimestamp(Date())
+        let failure: (String) -> HealthDiagnosticArtifact = { code in
+            HealthDiagnosticArtifact(
+                schemaVersion: 1, runID: command.runID.uuidString, kind: "physical-effort",
+                status: "error", generatedAt: generatedAt, days: command.days,
+                sampleCount: nil, unit: nil, minimum: nil, median: nil, p90: nil,
+                maximum: nil, errorCode: code
+            )
+        }
+        guard HKHealthStore.isHealthDataAvailable() else { return failure("health_unavailable") }
+        guard let type = HKObjectType.quantityType(forIdentifier: .physicalEffort) else {
+            return failure("type_unavailable")
+        }
+        do {
+            try await requestReadAuthorization(readTypes: [type])
+        } catch {
+            return failure("authorization_request_failed")
+        }
+        do {
+            let samples = try await fetchQuantitySamples(days: command.days, type: type)
+            let unit = HKUnit.kilocalorie().unitDivided(
+                by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .hour())
+            )
+            let values = samples.map { $0.quantity.doubleValue(for: unit) }.filter(\.isFinite).sorted()
+            return HealthDiagnosticArtifact(
+                schemaVersion: 1, runID: command.runID.uuidString, kind: "physical-effort",
+                status: values.isEmpty ? "no_data" : "completed", generatedAt: generatedAt,
+                days: command.days, sampleCount: values.count, unit: "MET",
+                minimum: values.first,
+                median: values.isEmpty ? nil : values[(values.count - 1) / 2],
+                p90: values.isEmpty ? nil : values[Int(Double(values.count - 1) * 0.9)],
+                maximum: values.last, errorCode: nil
+            )
+        } catch {
+            return failure("query_failed")
         }
     }
 
@@ -669,7 +708,7 @@ final class HealthKitService {
         return records
     }
 
-    private func readTypesForExport() -> Set<HKObjectType> {
+    func readTypesForExport() -> Set<HKObjectType> {
         var readTypes: Set<HKObjectType> = []
 
         if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {

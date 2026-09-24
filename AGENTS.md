@@ -85,6 +85,7 @@ python scripts/gen_health_dashboard.py
 ## 测试与变更维护
 
 - 系统不包含全流程 iOS 到 FastAPI 的端到端自动化测试；Xcode 项目中的 Swift 单元/序列化测试（`HealthQuantificationIOSTests`）与 Python ASGI 测试（`tests/`）是解耦的测试套件。
+- 真机 deep link 导出与数据库回读的验收入口见 [iOS Real-Device Deep Link Testing Runbook](docs/ios_real_device_testing.md)。
 - 修改 Python 代码后运行 `pytest` 校验单元与集成测试。
 - 涉及 CLI 或数据库配置变更时，运行 `python -m health_quantification.cli doctor config` 与 smoke checks。
 - 重要技术变更应更新 `docs/working.md`。
