@@ -129,6 +129,8 @@ python -m health_quantification.cli illness record --label nasal_congestion --se
 
 `ecg export` 把单条波形写到文件。标准输出只有路径、点数和状态。仓库内路径必须落在 `data/exports/`；`data/` 根目录没有被 gitignore，`data/ecg.json` 这类路径会被拒绝。路径、已存在的 symlink 和父目录都会先 resolve，再确认结果仍在 `data/exports/` 下。仓库外路径仍可写。HTTP 列表同样不带波形；需要波形时用 `GET /ingest/ecg/voltage`，并且必须给 `max_points`。`POST /ingest/ecg` 按实际字节拒绝超过 8MB 的请求体，不能只看 Content-Length。校验失败只返回字段位置和错误类型，不回显波形或输入值。同一 `source_id` 已有非空波形时，后续 `query_failed`、空电压或更短的 partial 不会覆盖它；点数不少于已存 partial 的新 partial，以及新的完整波形，可以刷新波形。已存症状不会被后续症状查询失败写成空列表。
 
+已导出的波形若需逐点完整性检查和原始网格图，见独立的 [ECG Plot](ecg_plot.md) skill；图与检查结果只保存在私有落点，不用于自动诊断。
+
 空的心电图结果不能当成没有记录，也不能当成正常。HealthKit 未授权时也会表现为空。设备上 Health 数据不可用时，导出类别失败码是 `health_data_unavailable`，和空结果不是同一件事。模拟器通常没有 Apple Watch 心电图。代码更新后，真机用同一 bundle ID 原位更新，不删除重装，并允许新的读取类型；正在运行的后端要由人重启后才有 `/ingest/ecg`。`db init` 只补 `ecg_records` 表，不删除已有行。不要把这次代码变更说成已经读到真实心电图。
 
 ## 调用约束
