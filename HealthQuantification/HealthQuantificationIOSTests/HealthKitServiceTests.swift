@@ -20,6 +20,12 @@ final class HealthKitServiceTests: XCTestCase {
             expected.insert(sleep)
         }
         expected.insert(HKWorkoutType.workoutType())
+        expected.insert(HKObjectType.electrocardiogramType())
+        for identifier in ECGExportMapping.symptomTypeIdentifiers {
+            if let symptomType = HKObjectType.categoryType(forIdentifier: identifier) {
+                expected.insert(symptomType)
+            }
+        }
 
         XCTAssertEqual(HealthKitService().readTypesForExport(), expected)
     }

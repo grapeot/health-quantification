@@ -10,7 +10,7 @@ final class HealthKitService {
     var lastUpdated = "never"
     var logEntries: [String] = []
 
-    private let healthStore = HKHealthStore()
+    let healthStore = HKHealthStore()
     private let processInfo: ProcessInfo
 
     init(processInfo: ProcessInfo = .processInfo) {
@@ -593,11 +593,11 @@ final class HealthKitService {
         return formatter.string(from: date)
     }
 
-    private var isUITestMockHealthDataAvailable: Bool {
+    var isUITestMockHealthDataAvailable: Bool {
         processInfo.arguments.contains("UITEST_HEALTH_DATA_AVAILABLE_TRUE")
     }
 
-    private func requestReadAuthorization(readTypes: Set<HKObjectType>) async throws {
+    func requestReadAuthorization(readTypes: Set<HKObjectType>) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
                 if let error {
@@ -736,6 +736,7 @@ final class HealthKitService {
             readTypes.insert(stepCountType)
         }
         readTypes.insert(HKWorkoutType.workoutType())
+        readTypes.formUnion(ecgReadTypes())
 
         return readTypes
     }
@@ -823,7 +824,7 @@ final class HealthKitService {
         )
     }
 
-    private func appendLog(title: String, payload: [String: String]) {
+    func appendLog(title: String, payload: [String: String]) {
         let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
         let text = String(data: data ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
         let block = "[\(title)]\n\(text)"
@@ -1018,11 +1019,14 @@ private extension HKWorkoutActivityType {
 
 enum HealthKitServiceError: LocalizedError {
     case authorizationDenied
+    case healthDataUnavailable
 
     var errorDescription: String? {
         switch self {
         case .authorizationDenied:
             return "HealthKit authorization was not granted."
+        case .healthDataUnavailable:
+            return "health_data_unavailable"
         }
     }
 }

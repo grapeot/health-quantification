@@ -12,7 +12,7 @@ This runbook documents the real-device testing workflow for the existing `health
 
 The FastAPI backend is a separately managed service, not hot-reloaded when its Python files change. Check `/health` and `/openapi.json` on the running instance before testing a new metric; never start a second process on its port. The app persists its server URL in `AppStorage`; the default `http://localhost:7996` points to the **iPhone**, not the Mac. Before a headless run, configure an authorized, phone-reachable Tailnet URL in the app UI. A Mac-only health check does not prove iPhone reachability.
 
-Ensure the iPhone is paired, connected, unlocked, and already authorized to read the exported HealthKit types. Keep the same bundle ID and development team; do not delete the app to refresh a build.
+Ensure the iPhone is paired, connected, unlocked, and already authorized to read the exported HealthKit types. Keep the same bundle ID and development team; do not delete the app to refresh a build. An electrocardiogram read is a new HealthKit type: update in place with the same bundle ID, do not delete and reinstall, then allow ECG read access. An empty ECG result does not prove that no recording exists and is not a normal classification. Do not treat a simulator run or an unrestarted backend as a completed ECG sync.
 
 ## Build, Install, Launch
 

@@ -151,4 +151,109 @@ final class IngestClientTests: XCTestCase {
         let data = try JSONEncoder().encode(value)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
+
+    func testEcgServerErrorOmitsResponseBody() async throws {
+        let marker = "SYNTHETIC-WAVE-0.009876"
+        SyntheticIngestURLProtocol.statusCode = 422
+        SyntheticIngestURLProtocol.body = Data("{\"detail\":\"\(marker)\"}".utf8)
+        let client = IngestClient(session: Self.stubSession())
+        let sample = ECGRecord(
+            sourceID: "ecg-synthetic",
+            startAt: "2026-03-31T02:00:00Z",
+            endAt: "2026-03-31T02:00:30Z",
+            algorithmClassification: "sinus_rhythm",
+            algorithmClassificationValue: 1,
+            symptomsStatus: "none",
+            symptomsStatusValue: 1,
+            averageHeartRateBPM: 60,
+            samplingFrequencyHz: 512,
+            numberOfVoltageMeasurements: 1,
+            voltageCount: 1,
+            voltageUnit: "V",
+            lead: "apple_watch_similar_to_lead_i",
+            voltageStatus: "partial",
+            voltageErrorCode: "voltage_count_mismatch",
+            algorithmVersion: 2,
+            sourceBundleID: "com.apple.health",
+            sourceName: "Health",
+            symptoms: [],
+            symptomsReadStatus: "not_applicable",
+            metadata: [:],
+            voltage: [ECGVoltagePoint(timeOffsetSeconds: 0, voltageVolts: 0.1)]
+        )
+
+        do {
+            _ = try await client.ingestEcg(
+                serverURL: try XCTUnwrap(URL(string: "http://127.0.0.1:9")),
+                samples: [sample]
+            )
+            XCTFail("expected server error")
+        } catch let error as IngestClientError {
+            let text = error.localizedDescription
+            XCTAssertEqual(text, "Server error 422.")
+            XCTAssertFalse(text.contains(marker))
+            XCTAssertFalse(text.contains("0.009876"))
+        }
+    }
+
+    func testNonEcgServerErrorStillIncludesStatusMessage() async throws {
+        SyntheticIngestURLProtocol.statusCode = 422
+        SyntheticIngestURLProtocol.body = Data("{\"detail\":\"missing samples\"}".utf8)
+        let client = IngestClient(session: Self.stubSession())
+        let sample = SleepSampleRecord(
+            sourceID: "ABC-123",
+            startAt: "2026-03-30T22:30:00Z",
+            endAt: "2026-03-31T06:30:00Z",
+            stage: "asleep_deep",
+            stageValue: 3,
+            sourceBundleID: "com.apple.health",
+            sourceName: "Health",
+            metadata: [:]
+        )
+
+        do {
+            _ = try await client.ingestSleep(
+                serverURL: try XCTUnwrap(URL(string: "http://127.0.0.1:9")),
+                samples: [sample]
+            )
+            XCTFail("expected server error")
+        } catch let error as IngestClientError {
+            XCTAssertEqual(error.localizedDescription, "Server error 422: {\"detail\":\"missing samples\"}")
+        }
+    }
+
+    private static func stubSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SyntheticIngestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+}
+
+private final class SyntheticIngestURLProtocol: URLProtocol {
+    static var statusCode = 422
+    static var body = Data()
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1:9")!,
+            statusCode: Self.statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )
+        if let response {
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        }
+        client?.urlProtocol(self, didLoad: Self.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

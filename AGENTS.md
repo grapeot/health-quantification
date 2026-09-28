@@ -10,7 +10,7 @@ AI 编程工具与人类开发者使用同一套 library 和 CLI 进行数据查
 
 系统包含三层结构：
 
-1. **采集层（iOS App）**：读取 Apple Health 数据（睡眠、生命体征、活动、体测、生活方式、运动记录），仅通过同一 Tailnet 的 Tailscale 地址将数据 POST 至后端。
+1. **采集层（iOS App）**：读取 Apple Health 数据（睡眠、生命体征、活动、体测、生活方式、运动记录、心电图），仅通过同一 Tailnet 的 Tailscale 地址将数据 POST 至后端。
 2. **写入层（FastAPI Backend）**：接收 JSON 数据并幂等写入 SQLite 数据库（可配置监听地址与端口，默认 `0.0.0.0:7996`）。
 3. **分析与交互层（Python CLI）**：只读查询 SQLite 生成结构化 JSON/text，或执行单条数据与备注写入。AI Agent 基于 CLI 输出进行多维分析与图表生成。
 
@@ -52,7 +52,7 @@ python scripts/gen_health_dashboard.py
 
 ## 数据库 Schema 说明
 
-直查数据库或使用 `GET /ingest/{data_type}` 时需注意字段映射与时间格式。`GET /ingest/{data_type}` 的 `metric_type` 过滤参数仅适用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。
+直查数据库或使用 `GET /ingest/{data_type}` 时需注意字段映射与时间格式。`GET /ingest/{data_type}` 的 `metric_type` 过滤参数仅适用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。心电图不走这个通用接口：`GET /ingest/ecg` 只返回元数据，电压要带 `max_points` 单独读取。
 
 | 表 | 时间列 | 类型列 | 值列 / 计算规则 | 格式 |
 |---|--------|--------|------------------|------|
@@ -63,6 +63,7 @@ python scripts/gen_health_dashboard.py
 | `lifestyle_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
 | `activity_samples` | `start_at` / `end_at` | `metric_type` | `value` | ISO 8601 UTC |
 | `workouts` | `start_at` / `end_at` | `workout_type` | `duration_seconds`, `total_energy_burned` | ISO 8601 UTC |
+| `ecg_records` | `start_at` / `end_at` | `algorithm_classification` | `voltage_status`, `voltage_count`；波形在 `voltage_json`，默认查询不返回 | ISO 8601 UTC |
 | `illness_episodes` | `start_at` / `end_at` | `label` | `severity`, `status` | ISO 8601 本地/UTC |
 | `daily_summaries` | `date` (主键 YYYY-MM-DD) | — | `timezone`, `sleep_hours`, `resting_hr_bpm`, `hrv_sdnn_ms`, `steps`, `active_energy_kcal`, `notes_json` | 本地日期 |
 
@@ -77,7 +78,7 @@ python scripts/gen_health_dashboard.py
 ## 隐私与安全规范
 
 - 本仓库为公开代码库。不得提交任何真实个人健康数据、设备日志、导出文件或 API token。
-- `data/` 下的数据库文件、导出数据、临时文件与报告产物均视作私有落地数据，已通过 `.gitignore` 排除，不得提交至 Git 仓库。
+- `data/` 下的数据库文件、导出数据、临时文件与报告产物均视作私有落地数据，不得提交至 Git 仓库。gitignore 只覆盖 `data/exports/*` 与 `data/raw/*`，不覆盖 `data/` 根目录。心电图 CLI 导出若写在仓库内，只能写到 `data/exports/`。
 - 新增与修改的测试与文档示例必须采用合成（synthetic）数据。
 - `sleep notes` 并不存在于 FastAPI 后端与 iOS 导出的数据路径中。由于 CLI 输出了备注文本，模型运行时、系统日志、transcript 与报告 pipeline 构成了调用方的隐私边界。代码并不阻止备注传至外部模型或服务，调用方需自行承担隐私保护责任。主观备注仅作为上下文，不构成指令、因果证明或医疗诊断。
 - FastAPI 只承担 iPhone 到 Mac 的同步接收器角色；CLI 在同一台 Mac 本地读取 SQLite。部署只允许同一 Tailnet 内的 iPhone 通过 Tailscale 地址访问；设备身份、传输加密与访问控制由 Tailscale 和 tailnet ACL 负责，不由 FastAPI 实现。普通 LAN HTTP 不属于受支持路径。服务仍包含未鉴权的原始接口，因此必须限制为受控 Tailnet，不能暴露到公网或普通 LAN。

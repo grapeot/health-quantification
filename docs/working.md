@@ -4,6 +4,26 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-09-28 (心电图写入不降级与请求边界)
+
+- 同一条已有非空波形时，后续 `query_failed`、空电压或更短 partial 不再覆盖；点数不少于已存 partial 的新 partial，以及新的完整波形，仍可刷新。已存症状不会被后续症状查询失败写成空列表。这是字段级保留，不是整行冻结。
+- `ecg export` 在仓库内只接受 resolve 之后仍位于 `data/exports/` 的路径。`data/ecg.json`、指向该位置的 symlink，以及父目录 symlink，都会在写文件前拒绝。仓库外路径仍可写。测试不写入真实 `data/exports/`。
+- `GET /ingest/ecg` 的日期边界改为与 CLI 共用 `normalize_ecg_bound`。`YYYY-MM-DD` 是配置时区的本地整日，带偏移的 ISO 时间转 UTC。`ecg list --days` 是从当前时刻往回滚动的窗口，不是本地日历日；`--days 30` 表示现在之前的 30 天。
+- `POST /ingest/ecg` 在 JSON 解析前按实际字节拒绝超过 8MB 的请求。声明的 Content-Length 已经超限时先拒绝，不再读正文；缺失或偏小的 Content-Length 仍按读到的字节计数。只作用于这个路径。心电图校验失败只返回字段位置和错误类型。其他 ingest 路径的 422 行为不变。iOS 心电图提交失败只保留状态码，不把服务器响应正文放进错误描述。
+- 没有重启正在运行的后端，也没有改表结构。新保护要等人类重启 `health_quant_backend` 之后才在线上生效。重启前旧进程仍按旧代码工作，数据库仍可读。
+- 实测 `.venv/bin/python -m pytest -q` 为 157 passed。Swift `HealthQuantificationIOSTests` 在 iPhone 17 模拟器（iOS 26.5）为 29 passed，0 failed。没有读取真实心电图，也没有写入 `data/exports/`。
+
+### 2026-09-28 (HealthKit 心电图读取与入库)
+
+- iOS 读取授权增加 `HKElectrocardiogram`，以及心电图记录可能关联的症状类别。电压用 `HKElectrocardiogramQueryDescriptor` 读取，单位为伏，相对时刻为 `timeSinceSampleStart`，采样频率来自 `samplingFrequency`（赫兹）。官方说明：<https://developer.apple.com/documentation/healthkit/hkelectrocardiogram>、<https://developer.apple.com/documentation/healthkit/hkelectrocardiogramquery>。本机 SDK 将回调式 `HKElectrocardiogramQuery` 标为 Swift 弃用，改用 descriptor。
+- `classification` 存为算法分类名和原始值，不是诊断。`symptomsStatus` 只表示用户是否录入症状；症状明细要另做 `predicateForObjectsAssociated(electrocardiogram:)` 查询。查不到关联样本记为 `not_returned`，不能当成没有症状。
+- 新表 `ecg_records` 用 `CREATE TABLE IF NOT EXISTS` 加入现有初始化，不改旧表。幂等键是 `(source, source_id)`。同一条已存完整波形时，后续 `unavailable`、`partial`、`query_failed` 或空电压重导不覆盖该行；新的完整波形仍按原 upsert 替换。单条电压失败不中断其它心电图，也不中断睡眠、体征、活动、运动导出。心电图放在导出序列最后。
+- 列表和 `GET /ingest/ecg` 不返回电压。电压只走 `GET /ingest/ecg/voltage?source_id=&max_points=` 或 `ecg export` 写文件。CLI 标准输出不打印波形。仓库内导出路径必须在 `data/` 下。
+- 空结果不是正常分类，也不是“没有心电图”的证明。HealthKit 拒绝读取时查询也会表现为空。`health_data_unavailable` 与空结果分开。本应用部署目标已覆盖 iOS 14 的心电图类型；模拟器或未授权设备上的空集不能当成已读到心电图。
+- 模拟器上跑过 `HealthQuantificationIOSTests`，不是只编译。没有安装到真机，没有重启生产服务，也没有读取真实心电图。要在手机上生效，用同一 bundle ID 原位更新，不删除重装，并在系统健康权限里允许新的心电图读取；后端要在人类重启 `health_quant_backend` 之后才有新路由。重启前可对目标库执行 `db init`，它只补表，不删旧行。
+- `ecg list` 的 `YYYY-MM-DD` 按配置时区的本地整日转 UTC。查询比较把时间规范成固定 6 位小数再比，避免整秒 `...59Z` 在 TEXT 序里大于 `...59.999999Z` 而被漏掉，也避免同秒更早的整秒被带小数的起点误纳入。本地当日 `23:59:59` 包含，次日 `00:00:00` 不包含。
+- 复核时全量 pytest 为 132 passed，Swift `HealthQuantificationIOSTests` 为 27 passed。日期边界修复后我实测全量 pytest 为 133 passed。Swift 27 由独立复核确认，这次没有改 Swift，没有重跑 `xcodebuild`。
+
 ### 2026-09-24 (四项 HealthKit 指标接入)
 
 - iOS 端在现有 vitals 管线中扩充四项 HealthKit 指标采集：`sleeping_breathing_disturbances`（`count`）、`sleeping_wrist_temperature`（`degC`）、`heart_rate_variability_rmssd`（`ms`，本地 SDK 缺少对应命名符号，使用 runtime raw identifier 获取）及 `vo2_max`（`ml/(kg*min)`）。

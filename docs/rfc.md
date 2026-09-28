@@ -9,7 +9,7 @@
 系统采用以本地 SQLite 为统一事实来源的三层结构：
 
 1. **采集层**：iOS App 从 Apple Health 读取数据，并经 Tailscale 连接提交至 Mac。
-2. **写入层**：FastAPI 后端接收 JSON 批量提交并幂等写入 SQLite，可配置监听地址与端口（默认 `0.0.0.0:7996`）。
+2. **写入层**：FastAPI 后端接收 JSON 批量提交并幂等写入 SQLite。`scripts/start_backend.sh` 在监听地址未设置或为 `0.0.0.0` 时只绑定本机 Tailscale IPv4，取不到则拒绝启动；显式 `127.0.0.1` 仅用于本地调试，脚本拒绝其他地址。端口默认 `7996`。
 3. **分析与交互层**：Python CLI 在 Mac 本地查询 SQLite 或写入单条数据/主观备注，输出 JSON/text 供 AI 分析。
 
 ```text
@@ -72,6 +72,12 @@ FastAPI 未配置应用层身份验证，且包含未鉴权的原始 `POST`、`G
 ### POST /ingest/workouts
 
 接收运动记录，按 `(source, source_id)` 幂等更新。包含 `workout_type`, `duration_seconds`, `total_energy_burned`。
+
+### POST /ingest/ecg
+
+接收心电图记录，按 `(source, source_id)` 幂等更新。单次最多 4 条，单条电压点不超过 65536。请求体按实际字节计，超过 8MB 返回 413，不能只依赖 Content-Length。校验失败返回 422，只含字段位置和错误类型，不回显输入值或波形。已有非空波形不会被后续空电压、更短 partial、`unavailable` 或 `query_failed` 覆盖；点数不少于已存 partial 的新 partial，以及新的完整波形，可以刷新。已存症状不会被后续 `query_failed`、`unavailable` 或 `not_returned` 写成空列表。`algorithm_classification` 是 Apple Watch 心电图算法分类，不是诊断。`symptoms_status` 只表示用户是否录入症状。`voltage_status` 取 `complete`、`unavailable`、`partial`、`query_failed`。
+
+`GET /ingest/ecg` 只返回元数据，默认最多 50 条，上限 200。`from_date` / `to_date` 与 CLI 相同：`YYYY-MM-DD` 是配置时区的本地整日，带偏移的 ISO 时间先转 UTC。空列表字段 `empty_result_does_not_prove_absence_or_normal` 恒为 true。电压只从 `GET /ingest/ecg/voltage?source_id=&max_points=` 读取，`max_points` 必填。`DELETE /ingest/ecg?source=` 按来源清理。这些路由不走通用 `GET /ingest/{data_type}`，避免把波形放进无上限响应。
 
 ### 通用查询与清理端点
 

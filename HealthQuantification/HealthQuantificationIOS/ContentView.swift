@@ -190,7 +190,7 @@ struct ContentView: View {
 
                 ActionButton(
                     title: exportRuntime.isExporting ? "Exporting 30-Day Snapshot" : "Export All Data",
-                    subtitle: exportRuntime.isExporting ? "Collecting and uploading sleep, vitals, body, lifestyle, activity, and workout samples" : "Send the last 30 days of samples to the configured backend",
+                    subtitle: exportRuntime.isExporting ? "Collecting and uploading sleep, vitals, body, lifestyle, activity, workout, and electrocardiogram samples" : "Send the last 30 days of samples to the configured backend",
                     icon: exportRuntime.isExporting ? "arrow.triangle.2.circlepath" : "square.and.arrow.up",
                     style: .primary,
                     isPressed: exportRuntime.isExporting,
@@ -317,7 +317,7 @@ struct ContentView: View {
         }
 
         exportStatusTitle = "Exporting"
-        exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, and workout samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
+        exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, workout, and electrocardiogram samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
         let result = await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient)

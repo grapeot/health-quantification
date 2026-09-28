@@ -39,6 +39,7 @@ CLI 查询与写入参数中，`--metric` 必须使用数据库存储的精确�
 | 体测 | `body_mass`, `blood_glucose`, `blood_pressure_systolic`, `blood_pressure_diastolic` | kg, mg/dL, mmHg | 智能秤 / CGM / 蓝牙血压计 |
 | 生活方式 | `dietary_caffeine`, `dietary_alcohol` | mg, g | HealthKit 同步 / CLI 手动记录 |
 | 运动 | Apple Health `HKWorkoutActivityType` 名称 | - | Apple Watch 结构化运动 |
+| 心电图 | `algorithm_classification`（算法分类，不是诊断） | V，相对秒 | Apple Watch 心电图；列表不返回电压 |
 
 ## 快速开始
 
@@ -67,7 +68,7 @@ CLI 查询与写入参数中，`--metric` 必须使用数据库存储的精确�
    scripts/start_backend.sh
    ```
 
-    默认监听 `0.0.0.0:7996`，可通过 `HEALTH_QUANT_SERVER_HOST` 与 `HEALTH_QUANT_SERVER_PORT` 覆盖。后端没有应用层鉴权，部署模型是仅允许同一 Tailnet 中受 ACL 控制的 iPhone 通过 Tailscale 连接同步；不要把端口暴露到公网或普通 LAN。验证 Mac 本地服务：`curl http://localhost:7996/health`。
+    未设置 `HEALTH_QUANT_SERVER_HOST`，或设为 `0.0.0.0` 时，启动脚本解析本机 Tailscale IPv4 并只绑定该地址；解析失败则拒绝启动，不会退回所有网卡。本地调试可显式使用 `127.0.0.1`。脚本拒绝其他地址。端口默认 `7996`，可用 `HEALTH_QUANT_SERVER_PORT` 覆盖。后端没有应用层鉴权，只允许同一 Tailnet 中受 ACL 控制的 iPhone 通过 Tailscale 地址同步；不要把端口暴露到公网或普通 LAN。默认绑定不是回环，不能用本机 localhost 代替 Tailscale 地址做连通性检查。
 
 3. **编译并配置 iOS App**：
    - 打开 `HealthQuantification/HealthQuantification.xcodeproj`。
