@@ -8,6 +8,7 @@ protocol HealthExportDataSource {
     func fetchLifestyleSamples(days: Int) async throws -> [LifestyleSampleRecord]
     func fetchActivitySamples(days: Int) async throws -> [ActivitySampleRecord]
     func fetchWorkoutSamples(days: Int) async throws -> [WorkoutRecord]
+    func fetchEcgSamples(days: Int) async throws -> [ECGRecord]
 }
 
 @MainActor
@@ -18,6 +19,7 @@ protocol HealthExportIngesting {
     func ingestLifestyle(serverURL: URL, samples: [LifestyleSampleRecord]) async throws -> IngestResponse
     func ingestActivity(serverURL: URL, samples: [ActivitySampleRecord]) async throws -> IngestResponse
     func ingestWorkouts(serverURL: URL, samples: [WorkoutRecord]) async throws -> IngestResponse
+    func ingestEcg(serverURL: URL, samples: [ECGRecord]) async throws -> IngestResponse
 }
 
 extension HealthKitService: HealthExportDataSource {}
@@ -87,6 +89,51 @@ struct HealthExportCoordinator {
             results.append(.failure(.workouts, error: error))
         }
 
+        do {
+            let samples = try await dataSource.fetchEcgSamples(days: days)
+            if samples.isEmpty {
+                results.append(.success(.ecg, sent: 0, upserted: 0, note: ECGExportMapping.emptyResultNote))
+            } else {
+                var sent = 0
+                var upserted = 0
+                var failed = 0
+                for sample in samples {
+                    do {
+                        let response = try await ingestClient.ingestEcg(serverURL: serverURL, samples: [sample])
+                        sent += 1
+                        upserted += response.upserted
+                    } catch {
+                        failed += 1
+                    }
+                }
+                if failed > 0 {
+                    results.append(
+                        .failure(
+                            .ecg,
+                            error: ECGExportError.partialIngest(failed: failed, sent: sent),
+                            sent: sent,
+                            upserted: upserted
+                        )
+                    )
+                } else {
+                    results.append(.success(.ecg, sent: sent, upserted: upserted))
+                }
+            }
+        } catch {
+            results.append(.failure(.ecg, error: error))
+        }
+
         return .aggregate(results)
+    }
+}
+
+enum ECGExportError: LocalizedError {
+    case partialIngest(failed: Int, sent: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case let .partialIngest(failed, sent):
+            return "ecg_partial_ingest failed=\(failed) sent=\(sent)"
+        }
     }
 }

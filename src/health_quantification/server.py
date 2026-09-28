@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import Annotated, Callable, ClassVar, Literal, TypeAlias, cast
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from health_quantification.config import Settings, load_settings
 from health_quantification.storage import (
+    ECG_LIST_LIMIT_DEFAULT,
+    ECG_LIST_LIMIT_MAX,
+    ECG_VOLTAGE_POINT_CAP,
+    count_ecg_records,
+    normalize_ecg_bound,
     delete_activity_samples,
     delete_body_samples,
+    delete_ecg_records,
     delete_lifestyle_samples,
     delete_sleep_samples,
     delete_vitals_samples,
@@ -21,12 +32,15 @@ from health_quantification.storage import (
     initialize_database,
     query_activity_samples,
     query_body_samples,
+    query_ecg_records,
+    query_ecg_voltage,
     query_lifestyle_samples,
     query_sleep_samples,
     query_vitals_samples,
     query_workout_samples,
     upsert_activity_samples,
     upsert_body_samples,
+    upsert_ecg_records,
     upsert_lifestyle_samples,
     upsert_sleep_samples,
     upsert_vitals_samples,
@@ -34,6 +48,45 @@ from health_quantification.storage import (
 )
 
 API_VERSION = "0.1.0"
+ECG_MAX_BODY_BYTES = 8_000_000
+ECG_MAX_SAMPLES = 4
+ECG_INGEST_PATH = "/ingest/ecg"
+_SAFE_ERROR_TYPE = re.compile(r"^[A-Za-z0-9_.]+$")
+_ECG_ERROR_FIELDS = frozenset(
+    {
+        "source",
+        "exported_at",
+        "schema_version",
+        "samples",
+        "source_id",
+        "start_at",
+        "end_at",
+        "algorithm_classification",
+        "algorithm_classification_value",
+        "symptoms_status",
+        "symptoms_status_value",
+        "average_heart_rate_bpm",
+        "sampling_frequency_hz",
+        "number_of_voltage_measurements",
+        "voltage_count",
+        "voltage_unit",
+        "lead",
+        "voltage_status",
+        "voltage_error_code",
+        "algorithm_version",
+        "source_bundle_id",
+        "source_name",
+        "symptoms",
+        "symptom_type",
+        "severity",
+        "severity_value",
+        "symptoms_read_status",
+        "metadata",
+        "voltage",
+        "time_offset_seconds",
+        "voltage_volts",
+    }
+)
 StorageRow: TypeAlias = dict[str, object]
 DataTypeName = Literal["sleep", "vitals", "body", "lifestyle", "activity", "workouts"]
 VitalsMetricType = Literal[
@@ -87,6 +140,112 @@ def _normalize_to_date(value: str | None) -> str | None:
             status_code=422,
             detail="to_date must be YYYY-MM-DD or an ISO-8601 datetime",
         ) from exc
+
+
+def _is_ecg_ingest(request: Request) -> bool:
+    return request.method == "POST" and request.url.path == ECG_INGEST_PATH
+
+
+def _safe_error_loc(loc: object) -> list[str | int]:
+    if not isinstance(loc, tuple):
+        return ["rejected_field"]
+    safe: list[str | int] = []
+    for part in loc:
+        if part == "body":
+            continue
+        if isinstance(part, int):
+            safe.append(part)
+        elif isinstance(part, str) and part in _ECG_ERROR_FIELDS:
+            safe.append(part)
+        else:
+            safe.append("rejected_field")
+    return safe
+
+
+def _safe_error_type(value: object) -> str:
+    if isinstance(value, str) and _SAFE_ERROR_TYPE.fullmatch(value):
+        return value
+    return "value_error"
+
+
+def _redacted_ecg_errors(exc: RequestValidationError) -> list[dict[str, object]]:
+    summary: list[dict[str, object]] = []
+    for err in exc.errors():
+        summary.append(
+            {
+                "loc": _safe_error_loc(err.get("loc")),
+                "type": _safe_error_type(err.get("type")),
+            }
+        )
+    return summary
+
+
+async def _send_json(send: Send, status_code: int, payload: dict[str, object]) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+class ECGIngestBodyLimit:
+    def __init__(self, app: ASGIApp, max_bytes: int = ECG_MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path") != ECG_INGEST_PATH
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        for key, value in scope.get("headers", []):
+            if key.lower() == b"content-length":
+                declared = value.decode("ascii", errors="ignore")
+                if declared.isdigit() and int(declared) > self.max_bytes:
+                    await _send_json(send, 413, {"detail": "ecg payload exceeds size limit"})
+                    return
+
+        total = 0
+        chunks: list[bytes] = []
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            body = message.get("body", b"")
+            if not isinstance(body, bytes):
+                body = bytes(body)
+            total += len(body)
+            if total > self.max_bytes:
+                await _send_json(send, 413, {"detail": "ecg payload exceeds size limit"})
+                return
+            chunks.append(body)
+            if not message.get("more_body", False):
+                break
+
+        payload = b"".join(chunks)
+        delivered = False
+
+        async def replay() -> Message:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay, send)
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -217,6 +376,82 @@ class WorkoutIngestRequest(BaseModel):
     samples: list[WorkoutSampleIn] = Field(..., min_length=1)
 
 
+class ECGVoltagePointIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    time_offset_seconds: float = Field(..., ge=0)
+    voltage_volts: float | None = Field(None)
+
+
+class ECGSymptomIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    symptom_type: str = Field(..., pattern=r"^[a-z0-9_]{1,64}$")
+    severity: str = Field(..., pattern=r"^[a-z0-9_]{1,64}$")
+    severity_value: int = Field(...)
+    source_id: str = Field(..., min_length=1, max_length=128)
+
+
+class ECGSampleIn(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source_id: str = Field(..., min_length=1, max_length=128)
+    start_at: datetime = Field(...)
+    end_at: datetime | None = Field(None)
+    algorithm_classification: str = Field(..., pattern=r"^[a-z0-9_]{1,64}$")
+    algorithm_classification_value: int = Field(...)
+    symptoms_status: str = Field(..., pattern=r"^[a-z0-9_]{1,64}$")
+    symptoms_status_value: int = Field(...)
+    average_heart_rate_bpm: float | None = Field(None)
+    sampling_frequency_hz: float | None = Field(None, gt=0)
+    number_of_voltage_measurements: int = Field(..., ge=0)
+    voltage_count: int = Field(..., ge=0)
+    voltage_unit: str | None = Field(None)
+    lead: Literal["apple_watch_similar_to_lead_i"] = Field(...)
+    voltage_status: Literal["complete", "unavailable", "partial", "query_failed"] = Field(...)
+    voltage_error_code: str | None = Field(None, pattern=r"^[a-z0-9_]{1,64}$")
+    algorithm_version: int | None = Field(None)
+    source_bundle_id: str | None = Field(None)
+    source_name: str | None = Field(None)
+    symptoms: list[ECGSymptomIn] = Field(default_factory=list, max_length=32)
+    symptoms_read_status: Literal[
+        "not_applicable",
+        "complete",
+        "unavailable",
+        "partial",
+        "query_failed",
+        "not_returned",
+    ] = Field(...)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    voltage: list[ECGVoltagePointIn] = Field(default_factory=list, max_length=ECG_VOLTAGE_POINT_CAP)
+
+    @model_validator(mode="after")
+    def check_voltage_consistency(self) -> "ECGSampleIn":
+        if self.voltage_count != len(self.voltage):
+            raise ValueError("voltage_count must equal the number of voltage points")
+        if self.voltage_unit not in {None, "V"}:
+            raise ValueError("voltage_unit must be V when present")
+        if self.voltage_status == "unavailable" and self.voltage:
+            raise ValueError("unavailable voltage_status cannot include voltage points")
+        if self.voltage_status == "complete":
+            if not self.voltage or self.voltage_count != self.number_of_voltage_measurements:
+                raise ValueError("complete voltage_status requires every expected measurement")
+            if any(point.voltage_volts is None for point in self.voltage):
+                raise ValueError("complete voltage_status cannot contain missing lead voltage")
+        if self.voltage_status == "query_failed" and self.voltage_error_code is None:
+            raise ValueError("query_failed voltage_status requires voltage_error_code")
+        return self
+
+
+class ECGIngestRequest(BaseModel):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+    source: str = Field(...)
+    exported_at: datetime = Field(...)
+    schema_version: str = Field(...)
+    samples: list[ECGSampleIn] = Field(..., min_length=1, max_length=ECG_MAX_SAMPLES)
+
+
 class IngestResponse(BaseModel):
     status: Literal["accepted"] = Field(...)
     upserted: int = Field(...)
@@ -286,6 +521,62 @@ class WorkoutSampleOut(BaseModel):
     updated_at: str = Field(...)
 
 
+class ECGRecordOut(BaseModel):
+    id: int = Field(...)
+    source: str = Field(...)
+    source_id: str = Field(...)
+    start_at: str = Field(...)
+    end_at: str | None = Field(...)
+    algorithm_classification: str = Field(...)
+    algorithm_classification_value: int = Field(...)
+    symptoms_status: str = Field(...)
+    symptoms_status_value: int = Field(...)
+    average_heart_rate_bpm: float | None = Field(...)
+    sampling_frequency_hz: float | None = Field(...)
+    number_of_voltage_measurements: int = Field(...)
+    voltage_count: int = Field(...)
+    voltage_unit: str | None = Field(...)
+    lead: str = Field(...)
+    voltage_status: str = Field(...)
+    voltage_error_code: str | None = Field(...)
+    algorithm_version: int | None = Field(...)
+    source_bundle_id: str | None = Field(...)
+    source_name: str | None = Field(...)
+    symptoms: list[JsonValue] = Field(...)
+    symptoms_read_status: str = Field(...)
+    metadata: dict[str, JsonValue] = Field(...)
+    created_at: str = Field(...)
+    updated_at: str = Field(...)
+    classification_kind: Literal["apple_watch_ecg_algorithm"] = "apple_watch_ecg_algorithm"
+    not_a_diagnosis: Literal[True] = True
+
+
+class ECGListResponse(BaseModel):
+    records: list[ECGRecordOut] = Field(...)
+    returned: int = Field(...)
+    limit: int = Field(...)
+    truncated: bool = Field(...)
+    empty_result_does_not_prove_absence_or_normal: Literal[True] = True
+    classification_kind: Literal["apple_watch_ecg_algorithm"] = "apple_watch_ecg_algorithm"
+    not_a_diagnosis: Literal[True] = True
+
+
+class ECGVoltageResponse(BaseModel):
+    source_id: str = Field(...)
+    voltage_status: str = Field(...)
+    voltage_count: int = Field(...)
+    returned_points: int = Field(...)
+    truncated: bool = Field(...)
+    lead: str = Field(...)
+    voltage_unit: str | None = Field(...)
+    sampling_frequency_hz: float | None = Field(...)
+    number_of_voltage_measurements: int = Field(...)
+    voltage: list[JsonValue] = Field(...)
+    missing_row_does_not_prove_absence_or_normal: Literal[True] = True
+    classification_kind: Literal["apple_watch_ecg_algorithm"] = "apple_watch_ecg_algorithm"
+    not_a_diagnosis: Literal[True] = True
+
+
 class DeleteSamplesResponse(BaseModel):
     deleted: int = Field(...)
 
@@ -350,6 +641,86 @@ def _activity_sample_to_storage_dict(source: str, sample: ActivitySampleIn) -> d
     }
 
 
+def _ecg_sample_to_storage_dict(source: str, sample: ECGSampleIn) -> dict[str, object]:
+    return {
+        "source": source,
+        "source_id": sample.source_id,
+        "start_at": _serialize_datetime(sample.start_at),
+        "end_at": _serialize_datetime(sample.end_at),
+        "algorithm_classification": sample.algorithm_classification,
+        "algorithm_classification_value": sample.algorithm_classification_value,
+        "symptoms_status": sample.symptoms_status,
+        "symptoms_status_value": sample.symptoms_status_value,
+        "average_heart_rate_bpm": sample.average_heart_rate_bpm,
+        "sampling_frequency_hz": sample.sampling_frequency_hz,
+        "number_of_voltage_measurements": sample.number_of_voltage_measurements,
+        "voltage_count": sample.voltage_count,
+        "voltage_unit": sample.voltage_unit,
+        "lead": sample.lead,
+        "voltage_status": sample.voltage_status,
+        "voltage_error_code": sample.voltage_error_code,
+        "algorithm_version": sample.algorithm_version,
+        "source_bundle_id": sample.source_bundle_id,
+        "source_name": sample.source_name,
+        "symptoms": [item.model_dump() for item in sample.symptoms],
+        "symptoms_read_status": sample.symptoms_read_status,
+        "metadata": sample.metadata,
+        "voltage": [item.model_dump() for item in sample.voltage],
+    }
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise TypeError(f"Expected numeric value, got {type(value).__name__}")
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    raise TypeError(f"Expected int value, got {type(value).__name__}")
+
+
+def _json_list(value: object) -> list[JsonValue]:
+    if isinstance(value, list):
+        return cast(list[JsonValue], value)
+    return []
+
+
+def _row_to_ecg_model(row: StorageRow) -> ECGRecordOut:
+    return ECGRecordOut(
+        id=_require_int(row["id"]),
+        source=_require_str(row["source"]),
+        source_id=_require_str(row["source_id"]),
+        start_at=_require_str(row["start_at"]),
+        end_at=_optional_str(row["end_at"]),
+        algorithm_classification=_require_str(row["algorithm_classification"]),
+        algorithm_classification_value=_require_int(row["algorithm_classification_value"]),
+        symptoms_status=_require_str(row["symptoms_status"]),
+        symptoms_status_value=_require_int(row["symptoms_status_value"]),
+        average_heart_rate_bpm=_optional_float(row["average_heart_rate_bpm"]),
+        sampling_frequency_hz=_optional_float(row["sampling_frequency_hz"]),
+        number_of_voltage_measurements=_require_int(row["number_of_voltage_measurements"]),
+        voltage_count=_require_int(row["voltage_count"]),
+        voltage_unit=_optional_str(row["voltage_unit"]),
+        lead=_require_str(row["lead"]),
+        voltage_status=_require_str(row["voltage_status"]),
+        voltage_error_code=_optional_str(row["voltage_error_code"]),
+        algorithm_version=_optional_int(row["algorithm_version"]),
+        source_bundle_id=_optional_str(row["source_bundle_id"]),
+        source_name=_optional_str(row["source_name"]),
+        symptoms=_json_list(row.get("symptoms")),
+        symptoms_read_status=_require_str(row["symptoms_read_status"]),
+        metadata=_metadata_object(row.get("metadata")),
+        created_at=_require_str(row["created_at"]),
+        updated_at=_require_str(row["updated_at"]),
+    )
+
+
 def _workout_sample_to_storage_dict(source: str, sample: WorkoutSampleIn) -> dict[str, object]:
     return {
         "source": source,
@@ -388,6 +759,12 @@ def _optional_str(value: object) -> str | None:
     if value is None:
         return None
     return _require_str(value)
+
+
+def _metadata_object(value: object) -> dict[str, JsonValue]:
+    if isinstance(value, dict) and all(isinstance(key, str) for key in value):
+        return cast(dict[str, JsonValue], value)
+    return _decode_metadata(value)
 
 
 def _decode_metadata(value: object) -> dict[str, JsonValue]:
@@ -540,13 +917,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description=(
             "HTTP ingestion boundary for normalized personal health data. "
             "This server exposes idempotent POST endpoints for sleep, vitals, body, "
-            "lifestyle, activity, and workout data, plus generic query and cleanup routes."
+            "lifestyle, activity, workout, and electrocardiogram data, plus generic query and cleanup routes."
         ),
     )
 
     def get_initialized_db_path() -> Path:
         initialize_database(active_settings.db_path)
         return active_settings.db_path
+
+    @app.exception_handler(RequestValidationError)
+    async def redact_ecg_validation(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        if _is_ecg_ingest(request):
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "ecg request rejected", "errors": _redacted_ecg_errors(exc)},
+            )
+        return await request_validation_exception_handler(request, exc)
+
+    @app.exception_handler(Exception)
+    async def redact_ecg_unexpected(request: Request, exc: Exception) -> JSONResponse:
+        if _is_ecg_ingest(request):
+            return JSONResponse(status_code=500, content={"detail": "ecg request failed"})
+        raise exc
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -624,6 +1018,100 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         total_samples = len(query_workout_samples(db_path=db_path, source=request.source))
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
+    @app.post("/ingest/ecg", response_model=IngestResponse)
+    def ingest_ecg(
+        request: ECGIngestRequest,
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> IngestResponse:
+        upserted = upsert_ecg_records(
+            db_path,
+            [_ecg_sample_to_storage_dict(request.source, sample) for sample in request.samples],
+        )
+        return IngestResponse(
+            status="accepted",
+            upserted=upserted,
+            total_samples=count_ecg_records(db_path, source=request.source),
+        )
+
+    @app.get("/ingest/ecg", response_model=ECGListResponse)
+    def get_ecg_records(
+        db_path: Path = Depends(get_initialized_db_path),
+        from_date: Annotated[str | None, Query()] = None,
+        to_date: Annotated[str | None, Query()] = None,
+        source: Annotated[str | None, Query()] = None,
+        source_id: Annotated[str | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=ECG_LIST_LIMIT_MAX)] = ECG_LIST_LIMIT_DEFAULT,
+    ) -> ECGListResponse:
+        """YYYY-MM-DD is a full local day in the configured timezone. Offset ISO datetimes are normalized to UTC."""
+        try:
+            normalized_from = (
+                normalize_ecg_bound(from_date, timezone=active_settings.timezone, end=False)
+                if from_date
+                else None
+            )
+            normalized_to = (
+                normalize_ecg_bound(to_date, timezone=active_settings.timezone, end=True)
+                if to_date
+                else None
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        rows, truncated = query_ecg_records(
+            db_path,
+            from_date=normalized_from,
+            to_date=normalized_to,
+            source=source,
+            source_id=source_id,
+            limit=limit,
+        )
+        return ECGListResponse(
+            records=[_row_to_ecg_model(row) for row in rows],
+            returned=len(rows),
+            limit=limit,
+            truncated=truncated,
+        )
+
+    @app.get("/ingest/ecg/voltage", response_model=ECGVoltageResponse)
+    def get_ecg_voltage(
+        source_id: Annotated[str, Query(min_length=1, max_length=128)],
+        max_points: Annotated[int, Query(ge=1, le=ECG_VOLTAGE_POINT_CAP)],
+        db_path: Path = Depends(get_initialized_db_path),
+        source: Annotated[str | None, Query()] = None,
+    ) -> ECGVoltageResponse:
+        try:
+            row = query_ecg_voltage(
+                db_path,
+                source_id=source_id,
+                source=source,
+                max_points=max_points,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="ecg record not found; a missing row does not prove absence or a normal classification",
+            )
+        return ECGVoltageResponse(
+            source_id=_require_str(row["source_id"]),
+            voltage_status=_require_str(row["voltage_status"]),
+            voltage_count=_require_int(row["voltage_count"]),
+            returned_points=_require_int(row["returned_points"]),
+            truncated=bool(row["truncated"]),
+            lead=_require_str(row["lead"]),
+            voltage_unit=_optional_str(row["voltage_unit"]),
+            sampling_frequency_hz=_optional_float(row["sampling_frequency_hz"]),
+            number_of_voltage_measurements=_require_int(row["number_of_voltage_measurements"]),
+            voltage=_json_list(row.get("voltage")),
+        )
+
+    @app.delete("/ingest/ecg", response_model=DeleteSamplesResponse)
+    def delete_ecg(
+        source: Annotated[str, Query()],
+        db_path: Path = Depends(get_initialized_db_path),
+    ) -> DeleteSamplesResponse:
+        return DeleteSamplesResponse(deleted=delete_ecg_records(db_path, source))
+
     @app.get(
         "/ingest/{data_type}",
         response_model=list[
@@ -660,6 +1148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         deleted = delete_fn(db_path, source)
         return DeleteSamplesResponse(deleted=deleted)
 
+    app.add_middleware(ECGIngestBodyLimit, max_bytes=ECG_MAX_BODY_BYTES)
     return app
 
 

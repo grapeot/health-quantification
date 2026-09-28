@@ -7,6 +7,7 @@ enum HealthExportCategory: String, CaseIterable, Codable, Equatable {
     case lifestyle
     case activity
     case workouts
+    case ecg
 }
 
 enum HealthExportStatus: String, Codable, Equatable {
@@ -76,18 +77,28 @@ struct HealthExportCategoryResult: Equatable {
     let sent: Int
     let upserted: Int
     let errorDescription: String?
+    let note: String?
 
-    static func success(_ category: HealthExportCategory, sent: Int, upserted: Int) -> Self {
-        Self(category: category, sent: sent, upserted: upserted, errorDescription: nil)
+    static func success(_ category: HealthExportCategory, sent: Int, upserted: Int, note: String? = nil) -> Self {
+        Self(category: category, sent: sent, upserted: upserted, errorDescription: nil, note: note)
     }
 
-    static func failure(_ category: HealthExportCategory, error: Error) -> Self {
-        Self(category: category, sent: 0, upserted: 0, errorDescription: error.localizedDescription)
+    static func failure(_ category: HealthExportCategory, error: Error, sent: Int = 0, upserted: Int = 0) -> Self {
+        Self(
+            category: category,
+            sent: sent,
+            upserted: upserted,
+            errorDescription: error.localizedDescription,
+            note: nil
+        )
     }
 
     var line: String {
         if let errorDescription {
             return "[\(category.rawValue)] failed: \(errorDescription)"
+        }
+        if let note {
+            return "[\(category.rawValue)] \(note)"
         }
         if sent == 0 {
             return "[\(category.rawValue)] no data"

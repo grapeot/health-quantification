@@ -31,6 +31,10 @@ struct IngestClient {
         try await ingest(samples: samples, endpointName: "workouts", serverURL: serverURL)
     }
 
+    func ingestEcg(serverURL: URL, samples: [ECGRecord]) async throws -> IngestResponse {
+        try await ingest(samples: samples, endpointName: "ecg", serverURL: serverURL)
+    }
+
     private func ingest<Sample: Codable & Equatable>(samples: [Sample], endpointName: String, serverURL: URL) async throws -> IngestResponse {
         let endpoint = serverURL.appending(path: "ingest").appending(path: endpointName)
         var request = URLRequest(url: endpoint)
@@ -46,6 +50,9 @@ struct IngestClient {
             }
 
             guard (200 ... 299).contains(httpResponse.statusCode) else {
+                if endpointName == "ecg" {
+                    throw IngestClientError.serverError(statusCode: httpResponse.statusCode, message: nil)
+                }
                 let message = String(data: data, encoding: .utf8)
                 throw IngestClientError.serverError(statusCode: httpResponse.statusCode, message: message)
             }
@@ -75,7 +82,8 @@ enum IngestClientError: LocalizedError {
             return "The server returned an invalid response."
         case let .serverError(statusCode, message):
             if let message, !message.isEmpty {
-                return "Server error \(statusCode): \(message)"
+                let clipped = message.count > 180 ? String(message.prefix(180)) : message
+                return "Server error \(statusCode): \(clipped)"
             }
             return "Server error \(statusCode)."
         case let .decodingFailed(error):

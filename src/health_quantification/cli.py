@@ -4,7 +4,8 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from health_quantification.analysis.metrics import (
@@ -23,7 +24,10 @@ from health_quantification.models import MetricAnalysisSummary, MetricDailySumma
 from health_quantification.storage import (
     append_daily_note,
     initialize_database,
+    normalize_ecg_bound,
     query_daily_notes,
+    query_ecg_records,
+    query_ecg_voltage,
     query_illness_episodes,
     query_activity_samples,
     query_body_samples,
@@ -197,6 +201,27 @@ def build_parser() -> argparse.ArgumentParser:
     workouts_daily.add_argument("--date", required=True)
     workouts_daily.add_argument("--format", choices=["json", "text"], default="json")
 
+    ecg = subparsers.add_parser("ecg")
+    ecg_sub = ecg.add_subparsers(dest="ecg_command", required=True)
+    ecg_list = ecg_sub.add_parser("list")
+    ecg_list.add_argument(
+        "--days",
+        type=int,
+        help=(
+            "Rolling window ending at the current instant in the configured timezone, "
+            "not a local calendar-day boundary. --days 30 means the previous 30 days from now."
+        ),
+    )
+    ecg_list.add_argument("--from-date")
+    ecg_list.add_argument("--to-date")
+    ecg_list.add_argument("--source-id")
+    ecg_list.add_argument("--limit", type=int, default=50)
+    ecg_list.add_argument("--format", choices=["json", "text"], default="json")
+    ecg_export = ecg_sub.add_parser("export")
+    ecg_export.add_argument("--source-id", required=True)
+    ecg_export.add_argument("--output", required=True)
+    ecg_export.add_argument("--max-points", type=int, default=65536)
+
     return parser
 
 
@@ -324,6 +349,161 @@ def _run_metric_command(
             print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
         else:
             _print_metric_daily_text(summary)
+        return 0
+
+    return 2
+
+
+def _ecg_disclaimer() -> dict[str, object]:
+    return {
+        "classification_kind": "apple_watch_ecg_algorithm",
+        "not_a_diagnosis": True,
+        "empty_result_does_not_prove_absence_or_normal": True,
+    }
+
+
+def _ecg_public_row(row: dict[str, object]) -> dict[str, object]:
+    public = dict(row)
+    public.pop("voltage", None)
+    public.pop("voltage_json", None)
+    public.update(_ecg_disclaimer())
+    return public
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _private_export_path(path: Path) -> Path:
+    repo_root = Path(__file__).resolve().parents[2]
+    data_dir = repo_root / "data"
+    exports_dir = data_dir / "exports"
+    resolved = path.expanduser().resolve()
+    if not _is_within(resolved, repo_root):
+        return resolved
+    if data_dir.is_symlink() or exports_dir.is_symlink():
+        raise ValueError("ecg export inside the repository must be under a non-symlinked data/exports/")
+    exports_root = exports_dir.resolve()
+    if resolved == exports_root or not _is_within(resolved, exports_root):
+        raise ValueError("ecg export inside the repository must be under data/exports/")
+    return resolved
+
+
+def _reject_ecg(detail: str) -> int:
+    print(json.dumps({"status": "rejected", "detail": detail}, sort_keys=True))
+    return 2
+
+
+def _ecg_list_bound(value: str, *, timezone: str, end: bool) -> str:
+    return normalize_ecg_bound(value, timezone=timezone, end=end)
+
+
+def _run_ecg_command(args: argparse.Namespace, db_path: Path, timezone: str) -> int:
+    initialize_database(db_path)
+    if args.ecg_command == "list":
+        if args.limit < 1 or args.limit > 200:
+            return _reject_ecg("limit must be 1..200")
+        if args.days is not None and args.days <= 0:
+            return _reject_ecg("days must be greater than 0")
+        try:
+            from_date = (
+                _ecg_list_bound(args.from_date, timezone=timezone, end=False)
+                if args.from_date
+                else None
+            )
+            to_date = (
+                _ecg_list_bound(args.to_date, timezone=timezone, end=True) if args.to_date else None
+            )
+        except ValueError as error:
+            return _reject_ecg(str(error))
+        if from_date is None and args.days is not None:
+            start = datetime.now(ZoneInfo(timezone)) - timedelta(days=args.days)
+            from_date = start.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        rows, truncated = query_ecg_records(
+            db_path,
+            from_date=from_date,
+            to_date=to_date,
+            source_id=args.source_id,
+            limit=args.limit,
+        )
+        public_rows = [_ecg_public_row(row) for row in rows]
+        if args.format == "json":
+            print(
+                json.dumps(
+                    {
+                        "records": public_rows,
+                        "returned": len(public_rows),
+                        "truncated": truncated,
+                        **_ecg_disclaimer(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print("ECG algorithm classification is not a diagnosis.")
+            print("An empty result does not prove absence or a normal classification.")
+            print(f"returned={len(public_rows)} truncated={truncated}")
+            for row in public_rows:
+                print(
+                    f"{row.get('start_at')} source_id={row.get('source_id')} "
+                    f"algorithm_classification={row.get('algorithm_classification')} "
+                    f"symptoms_status={row.get('symptoms_status')} "
+                    f"voltage_status={row.get('voltage_status')} "
+                    f"voltage_count={row.get('voltage_count')}"
+                )
+        return 0
+
+    if args.ecg_command == "export":
+        try:
+            destination = _private_export_path(Path(args.output))
+            row = query_ecg_voltage(
+                db_path,
+                source_id=args.source_id,
+                max_points=args.max_points,
+            )
+        except ValueError as error:
+            print(json.dumps({"status": "rejected", "detail": str(error)}, sort_keys=True))
+            return 2
+        if row is None:
+            print(
+                json.dumps(
+                    {
+                        "status": "not_found",
+                        "source_id": args.source_id,
+                        "missing_row_does_not_prove_absence_or_normal": True,
+                        **_ecg_disclaimer(),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 1
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        voltage = row.get("voltage")
+        file_payload = _ecg_public_row(row)
+        file_payload["voltage"] = voltage if isinstance(voltage, list) else []
+        file_payload["returned_points"] = row.get("returned_points")
+        file_payload["truncated"] = row.get("truncated")
+        destination.write_text(json.dumps(file_payload, indent=2, sort_keys=True), encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "status": "exported",
+                    "path": str(destination),
+                    "source_id": args.source_id,
+                    "voltage_count": row.get("voltage_count"),
+                    "returned_points": row.get("returned_points"),
+                    "truncated": row.get("truncated"),
+                    "voltage_status": row.get("voltage_status"),
+                    **_ecg_disclaimer(),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
 
     return 2
@@ -530,6 +710,9 @@ def main(argv: list[str] | None = None) -> int:
             args=args,
             timezone=settings.timezone,
         )
+
+    if args.command == "ecg":
+        return _run_ecg_command(args, settings.db_path, settings.timezone)
 
     if args.command == "workouts":
         samples = _workout_samples_as_metric_rows(query_workout_samples(db_path=settings.db_path))

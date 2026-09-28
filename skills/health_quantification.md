@@ -15,13 +15,13 @@
 
 以 SQLite 为核心的统一数据架构：
 
-1. **SQLite 数据库**：唯一事实来源（Single Source of Truth）。表包括 `observations`、`sleep_samples`、`vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples`、`workouts`、`illness_episodes` 与 `daily_summaries`（`date` 为主键，含 `timezone`、`sleep_hours`、`resting_hr_bpm`、`hrv_sdnn_ms`、`steps`、`active_energy_kcal`、`notes_json`）。
+1. **SQLite 数据库**：唯一事实来源（Single Source of Truth）。表包括 `observations`、`sleep_samples`、`vitals_samples`、`body_samples`、`lifestyle_samples`、`activity_samples`、`workouts`、`ecg_records`、`illness_episodes` 与 `daily_summaries`（`date` 为主键，含 `timezone`、`sleep_hours`、`resting_hr_bpm`、`hrv_sdnn_ms`、`steps`、`active_energy_kcal`、`notes_json`）。
 2. **数据写入**：FastAPI Server 只接收 iPhone 通过同一 Tailnet 的 Tailscale 地址提交的批量数据。设备身份、传输加密与访问控制由 Tailscale 和 tailnet ACL 管理；FastAPI 本身未鉴权。CLI `record` / `illness` / `sleep notes` 在 Mac 本地写入。
 3. **数据读取**：Python CLI（只读查询），输出结构化 JSON/text 供 AI 进行分析与图表生成。
 
 ## 数据类型与精确 `metric_type` 名称
 
-CLI 的 `--metric` 参数直接对应数据库中的 `metric_type` 列。传入不匹配的名称不会报错，但会静默返回空结果（`count=0`）。对于 HTTP GET 接口 `/ingest/{data_type}`，`metric_type` 过滤参数仅作用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。
+CLI 的 `--metric` 参数直接对应数据库中的 `metric_type` 列。传入不匹配的名称不会报错，但会静默返回空结果（`count=0`）。对于 HTTP GET 接口 `/ingest/{data_type}`，`metric_type` 过滤参数仅作用于 `vitals`、`body`、`lifestyle` 与 `activity`；`sleep` 采用 `stage`，`workouts` 采用 `workout_type`。心电图使用 `ecg list` / `ecg export`，不使用 `--metric`。
 
 ### `metric_type` 精确映射表
 
@@ -70,6 +70,8 @@ python -m health_quantification.cli lifestyle analyze --days 30 --metric dietary
 python -m health_quantification.cli activity analyze --days 30 --metric step_count --format json
 python -m health_quantification.cli workouts analyze --days 30 --format json
 python -m health_quantification.cli illness list --status active --format json
+python -m health_quantification.cli ecg list --days 30 --format json
+python -m health_quantification.cli ecg export --source-id SYNTHETIC-ECG-ID --output data/exports/ecg.json --max-points 4096
 ```
 
 > **注意**：`--metric` 仅适用于 `analyze` 命令，不适用于 `daily` 命令。
@@ -120,6 +122,14 @@ python -m health_quantification.cli illness record --label nasal_congestion --se
    - `sleep daily --last-night` 查找最近一个有夜间主睡眠的功能日，并返回该功能日的完整 metrics（包含主睡眠与午睡），由 AI 判断睡眠结构。
 3. **睡眠 Session 拆分**：相邻样本时间间隔大于 2 小时自动拆分为不同 Session，其中累积时长最长的为 Main Session。
 4. **步数多源数据融合**：若存在 Phone 与 Watch 重叠数据，按 `max(phone, watch) × 1.05` 估算日总步数，避免直接相加导致重复计算。
+
+## 心电图读取
+
+`ecg list` 只返回元数据：算法分类、症状状态、采样频率、电压点数和 `voltage_status`。它不返回电压序列，也不做诊断或治疗判断。`--from-date` / `--to-date` 的 `YYYY-MM-DD` 按 `HEALTH_QUANT_TIMEZONE`（默认 `America/Los_Angeles`）的本地整日转成 UTC 边界；带偏移的 ISO 时间先标准化为 UTC。`GET /ingest/ecg` 使用同一套边界，不按 UTC 日历日解释日期。`--days` 必须大于 0，而且是从当前时刻往回滚动的窗口，不是按本地日历日对齐。`--days 30` 表示现在之前的 30 天。`algorithm_classification` 来自 Apple Watch 心电图算法，`sinus_rhythm` 不是“正常”的医学结论。`symptoms_status` 只说明用户有没有录入症状；具体症状是另一组关联样本，没读到时状态是 `not_returned`，不能解释成没有症状。
+
+`ecg export` 把单条波形写到文件。标准输出只有路径、点数和状态。仓库内路径必须落在 `data/exports/`；`data/` 根目录没有被 gitignore，`data/ecg.json` 这类路径会被拒绝。路径、已存在的 symlink 和父目录都会先 resolve，再确认结果仍在 `data/exports/` 下。仓库外路径仍可写。HTTP 列表同样不带波形；需要波形时用 `GET /ingest/ecg/voltage`，并且必须给 `max_points`。`POST /ingest/ecg` 按实际字节拒绝超过 8MB 的请求体，不能只看 Content-Length。校验失败只返回字段位置和错误类型，不回显波形或输入值。同一 `source_id` 已有非空波形时，后续 `query_failed`、空电压或更短的 partial 不会覆盖它；点数不少于已存 partial 的新 partial，以及新的完整波形，可以刷新波形。已存症状不会被后续症状查询失败写成空列表。
+
+空的心电图结果不能当成没有记录，也不能当成正常。HealthKit 未授权时也会表现为空。设备上 Health 数据不可用时，导出类别失败码是 `health_data_unavailable`，和空结果不是同一件事。模拟器通常没有 Apple Watch 心电图。代码更新后，真机用同一 bundle ID 原位更新，不删除重装，并允许新的读取类型；正在运行的后端要由人重启后才有 `/ingest/ecg`。`db init` 只补 `ecg_records` 表，不删除已有行。不要把这次代码变更说成已经读到真实心电图。
 
 ## 调用约束
 
