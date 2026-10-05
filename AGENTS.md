@@ -59,7 +59,7 @@ python scripts/gen_health_dashboard.py
 | `observations` | `start_at` / `end_at` | `metric` | `value`, `unit`, `source` | ISO 8601 UTC |
 | `sleep_samples` | `start_at` | `stage` (asleep_deep/core/rem/awake) | 阶段时长由 `julianday(end_at) - julianday(start_at)` 计算 | ISO 8601 UTC |
 | `vitals_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
-| `body_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
+| `body_samples` | `recorded_at` | `metric_type` | `value`（`body_mass`、`body_fat_percentage`、`lean_body_mass`、`waist_circumference`、`blood_glucose`、`blood_pressure_systolic`、`blood_pressure_diastolic`） | ISO 8601 UTC |
 | `lifestyle_samples` | `recorded_at` | `metric_type` | `value` | ISO 8601 UTC |
 | `activity_samples` | `start_at` / `end_at` | `metric_type` | `value` | ISO 8601 UTC |
 | `workouts` | `start_at` / `end_at` | `workout_type` | `duration_seconds`, `total_energy_burned` | ISO 8601 UTC |

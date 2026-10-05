@@ -11,7 +11,8 @@ final class HealthKitServiceTests: XCTestCase {
             HKQuantityTypeIdentifier(rawValue: "HKQuantityTypeIdentifierHeartRateVariabilityRMSSD"),
             .respiratoryRate, .appleSleepingBreathingDisturbances,
             .appleSleepingWristTemperature, .vo2Max, .oxygenSaturation,
-            .activeEnergyBurned, .bodyMass, .bloodGlucose,
+            .activeEnergyBurned, .bodyMass, .bodyFatPercentage, .leanBodyMass,
+            .waistCircumference, .bloodGlucose,
             .dietaryCaffeine, HKQuantityTypeIdentifier(rawValue: "HKQuantityTypeIdentifierDietaryAlcohol"),
             .bloodPressureSystolic, .bloodPressureDiastolic, .stepCount,
         ]

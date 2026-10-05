@@ -781,6 +781,15 @@ final class HealthKitService {
             quantityConfiguration(identifier: .bodyMass, metricType: "body_mass", unitLabel: "kg") { quantity in
                 quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
             },
+            quantityConfiguration(identifier: .bodyFatPercentage, metricType: "body_fat_percentage", unitLabel: "%") { quantity in
+                quantity.doubleValue(for: .percent()) * 100.0
+            },
+            quantityConfiguration(identifier: .leanBodyMass, metricType: "lean_body_mass", unitLabel: "kg") { quantity in
+                quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+            },
+            quantityConfiguration(identifier: .waistCircumference, metricType: "waist_circumference", unitLabel: "cm") { quantity in
+                quantity.doubleValue(for: .meterUnit(with: .centi))
+            },
             quantityConfiguration(identifier: .bloodGlucose, metricType: "blood_glucose", unitLabel: "mg/dL") { quantity in
                 quantity.doubleValue(for: HKUnit(from: "mg/dL"))
             },

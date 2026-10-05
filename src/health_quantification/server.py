@@ -103,6 +103,9 @@ VitalsMetricType = Literal[
 ]
 BodyMetricType = Literal[
     "body_mass",
+    "body_fat_percentage",
+    "lean_body_mass",
+    "waist_circumference",
     "blood_glucose",
     "blood_pressure_systolic",
     "blood_pressure_diastolic",
