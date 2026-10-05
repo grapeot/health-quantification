@@ -4,6 +4,15 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-10-04 (体测体成分与腰围接入)
+
+- iOS 采集端 `bodyQuantityConfigurations()` 新增三项 HealthKit 体测类型：`bodyFatPercentage`（`body_fat_percentage`，`%`，按 `.percent()` 取值后乘 100，与 `oxygen_saturation` 同一归一化约定）、`leanBodyMass`（`lean_body_mass`，`kg`）、`waistCircumference`（`waist_circumference`，`cm`）。此前采集端只配了 `bodyMass` 和 `bloodGlucose`，Apple Health 里已有的体成分与腰围数据不会被采集。
+- 后端 `BodyMetricType` Literal 放行三个新 metric；存储层 `body_samples` 按 `metric_type` 区分，无需改表。
+- 腰围按原始厘米值存，腰高比等派生比值不入库，归分析层。
+- 新增 Python 单测 `test_body_ingest_accepts_new_metrics`；`test_phase_2_ingest_requests_reject_unknown_metric_type` 的 body 反例由已合法化的 `body_fat_percentage` 改为 `unknown_body_metric`。Swift `HealthKitServiceTests.testReadAuthorizationIncludesOnlyExportedTypes` 的授权清单同步加入三项。
+- 实测 `.venv/bin/python -m pytest -q` 为 167 passed；Swift 在 iPhone 17 Pro 模拟器（iOS 26.5）为 TEST SUCCEEDED。没有写入真实体成分读数或腰围。
+- 新增设计文档 `docs/design_body_composition_waist.md`。
+
 ### 2026-09-28 (心电图写入不降级与请求边界)
 
 - 同一条已有非空波形时，后续 `query_failed`、空电压或更短 partial 不再覆盖；点数不少于已存 partial 的新 partial，以及新的完整波形，仍可刷新。已存症状不会被后续症状查询失败写成空列表。这是字段级保留，不是整行冻结。

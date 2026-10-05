@@ -194,6 +194,24 @@ def test_vitals_ingest_accepts_new_metrics(metric_type: str, unit: str, value: f
 
 
 @pytest.mark.parametrize(
+    ("metric_type", "unit", "value"),
+    [
+        ("body_fat_percentage", "%", 23.4),
+        ("lean_body_mass", "kg", 53.2),
+        ("waist_circumference", "cm", 81.5),
+    ],
+)
+def test_body_ingest_accepts_new_metrics(metric_type: str, unit: str, value: float) -> None:
+    payload = build_body_payload()
+    samples = cast(list[dict[str, object]], payload["samples"])
+    samples[0] = {**samples[0], "metric_type": metric_type, "unit": unit, "value": value}
+    request = BodyIngestRequest.model_validate(payload)
+    assert request.samples[0].metric_type == metric_type
+    assert request.samples[0].unit == unit
+    assert request.samples[0].value == value
+
+
+@pytest.mark.parametrize(
     ("request_model", "payload_builder"),
     [
         (SleepIngestRequest, build_sleep_payload),
@@ -225,7 +243,7 @@ def test_ingest_requests_reject_missing_samples(
     ("request_model", "payload_builder", "bad_metric_type"),
     [
         (VitalsIngestRequest, build_vitals_payload, "unknown_vital"),
-        (BodyIngestRequest, build_body_payload, "body_fat_percentage"),
+        (BodyIngestRequest, build_body_payload, "unknown_body_metric"),
         (LifestyleIngestRequest, build_lifestyle_payload, "water_intake"),
         (ActivityIngestRequest, build_activity_payload, "distance_walking_running"),
     ],
