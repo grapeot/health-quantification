@@ -56,6 +56,15 @@ sqlite3 -readonly data/health_quantification.db \
 
 If no evidence appears after launch, inspect the strict URL parser, permission/query errors, and the saved server URL. A manual tap of `Export All Data` can isolate deep-link delivery from HealthKit or network issues, but is a fallback, not a passed headless test. Never infer success from `devicectl` exit code alone. Preserve only minimal, ignored local QA evidence.
 
+## Automated Export Profiling (Real Device)
+
+```bash
+source .venv/bin/activate
+python scripts/ios_profile.py --device '<paired-phone>' --configuration Release --runs 5 --warmup 1
+```
+
+This command performs the authorized live 30-day export to the app's existing Tailnet backend. It is distinct from the read-only diagnostic below. Success requires a matching terminal `success` artifact, all seven category fetch spans, and equal sent/accepted counts. Process launch alone is not completion. See [performance.md](performance.md) for timing definitions, progress retrieval and comparison rules.
+
 ## Read-Only Diagnostic Artifact
 
 The Debug-only diagnostic harness queries only the allowlisted `physical-effort` HealthKit type, produces a small local aggregate, and does **not** send samples to the backend. From the project root, run the full build/install/trigger/retrieval cycle with:

@@ -41,12 +41,28 @@ struct IngestClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let encodeStart = ExportProfiler.now()
         request.httpBody = try JSONEncoder().encode(IngestEnvelope(samples: samples))
+        let profiler = ExportProfiler.current
+        profiler?.record("\(endpointName).encode", since: encodeStart, count: samples.count, bytes: request.httpBody?.count)
+        if let profiler { request.setValue(profiler.runID.uuidString, forHTTPHeaderField: "X-Health-Profile") }
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let httpStart = ExportProfiler.now()
+            let delegate = profiler.map { ExportNetworkMetrics(profiler: $0, category: endpointName) }
+            let (data, response) = try await session.data(for: request, delegate: delegate)
+            profiler?.record("\(endpointName).http", since: httpStart)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw IngestClientError.invalidResponse
+            }
+            if let timing = httpResponse.value(forHTTPHeaderField: "Server-Timing") {
+                for item in timing.split(separator: ",") {
+                    let parts = item.trimmingCharacters(in: .whitespaces).split(separator: ";")
+                    if parts.count == 2, ["initialize", "convert", "upsert", "count", "total"].contains(String(parts[0])),
+                       parts[1].hasPrefix("dur="), let duration = Double(parts[1].dropFirst(4)), duration.isFinite, duration >= 0 {
+                        profiler?.add("\(endpointName).server.\(parts[0])", milliseconds: duration)
+                    }
+                }
             }
 
             guard (200 ... 299).contains(httpResponse.statusCode) else {
@@ -58,7 +74,9 @@ struct IngestClient {
             }
 
             do {
-                return try JSONDecoder().decode(IngestResponse.self, from: data)
+                let result = try JSONDecoder().decode(IngestResponse.self, from: data)
+                profiler?.add("\(endpointName).ingested", milliseconds: 0, count: result.upserted)
+                return result
             } catch {
                 throw IngestClientError.decodingFailed(error)
             }

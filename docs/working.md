@@ -4,6 +4,11 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-10-06: Export Profiling Infrastructure and Real-Device Baseline
+
+- Implemented automated real-device export profiling: host runner (`scripts/ios_profile.py`), strict `profile-export` deep link, opt-in client instrumentation, backend `Server-Timing`, and atomic progress/completion artifacts. See `docs/performance.md`.
+- Verified XCTest unit suites and all 170 Python tests; executed Release exports on physical hardware against the configured live backend. Raw artifacts stay in ignored scratch directories.
+
 ### 2026-10-04 (体测体成分与腰围接入)
 
 - iOS 采集端 `bodyQuantityConfigurations()` 新增三项 HealthKit 体测类型：`bodyFatPercentage`（`body_fat_percentage`，`%`，按 `.percent()` 取值后乘 100，与 `oxygen_saturation` 同一归一化约定）、`leanBodyMass`（`lean_body_mass`，`kg`）、`waistCircumference`（`waist_circumference`，`cm`）。此前采集端只配了 `bodyMass` 和 `bloodGlucose`，Apple Health 里已有的体成分与腰围数据不会被采集。
