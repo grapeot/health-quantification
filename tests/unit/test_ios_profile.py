@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from scripts.ios_profile import summarize, validate_profile
+from scripts.ios_profile import compare_summaries, summarize, validate_profile
 
 RUN_ID = "456EEB81-F801-4F0A-9C3F-9C9AFD9AB123"
 
@@ -34,3 +34,17 @@ def test_summarizes_repeated_spans_without_double_counting_categories():
     result = summarize([payload, second])
     assert result["total"] == {"p50_ms": 15, "p90_ms": 20}
     assert result["phases"]["ecg.http"]["p50_ms"] == 5
+
+
+def test_comparison_reports_workload_drift_and_rejects_mixed_modes():
+    baseline = {"configuration": "Release", "cold": False, "warmup": 1, "total": {"p50_ms": 12},
+                "sample_counts": [{"vitals.encode": 100}]}
+    candidate = {**baseline, "total": {"p50_ms": 4}, "sample_counts": [{"vitals.encode": 99}]}
+    comparison = compare_summaries(baseline, candidate)
+    assert comparison["speedup"] == 3
+    assert comparison["time_reduction_percent"] == pytest.approx(200 / 3)
+    assert comparison["maximum_relative_sample_count_drift"] == .01
+    with pytest.raises(ValueError):
+        compare_summaries(baseline, {**candidate, "cold": True})
+    with pytest.raises(ValueError):
+        compare_summaries(baseline, {**candidate, "warmup": 0})

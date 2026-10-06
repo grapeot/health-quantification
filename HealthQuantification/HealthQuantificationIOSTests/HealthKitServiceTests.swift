@@ -57,6 +57,28 @@ final class HealthKitServiceTests: XCTestCase {
         XCTAssertEqual(HealthKitService.isoTimestamp(date), "2026-03-31T02:35:56Z")
     }
 
+    func testTimestampOptimizationPreservesLegacyUTCAndSecondBoundaries() {
+        let legacy = ISO8601DateFormatter()
+        legacy.formatOptions = [.withInternetDateTime]
+        legacy.timeZone = .gmt
+        for seconds in [-1.001, -0.001, 0, 0.999, 1.001, 951782400, 1710053999.999, 1793519999.999,
+                        1793519999.9995, 1793519999.9999, 1793519999.999999, 1793519999.5001] {
+            let date = Date(timeIntervalSince1970: seconds)
+            XCTAssertEqual(HealthKitService.isoTimestamp(date), legacy.string(from: date))
+        }
+    }
+
+    func testTimestampCacheDoesNotShareMutableFormattersAcrossThreads() {
+        let legacy = ISO8601DateFormatter()
+        legacy.formatOptions = [.withInternetDateTime]
+        legacy.timeZone = .gmt
+        let dates = (0..<128).map { Date(timeIntervalSince1970: 1793519999.9995 + Double($0)) }
+        let expected = dates.map { legacy.string(from: $0) }
+        DispatchQueue.concurrentPerform(iterations: dates.count) { index in
+            XCTAssertEqual(HealthKitService.isoTimestamp(dates[index]), expected[index])
+        }
+    }
+
     @MainActor
     func testNormalizedStageValueMapsAllKnownValuesAndUnknown() {
         XCTAssertEqual(HealthKitService.normalizedStageValue(for: HKCategoryValueSleepAnalysis.inBed.rawValue), 0)
