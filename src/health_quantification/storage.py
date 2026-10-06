@@ -762,6 +762,15 @@ def record_illness_episode(db_path: Path, sample: dict[str, object]) -> dict[str
     }
 
 
+def count_samples(db_path: Path, *, table_name: str, source: str | None = None) -> int:
+    allowed_tables = {"sleep_samples", "vitals_samples", "body_samples", "lifestyle_samples", "activity_samples", "workouts"}
+    if table_name not in allowed_tables:
+        raise ValueError("unsupported sample table")
+    where = " WHERE source = ?" if source else ""
+    with connect(db_path) as conn:
+        return int(conn.execute(f"SELECT COUNT(*) FROM {table_name}{where}", (source,) if source else ()).fetchone()[0])
+
+
 def _query_samples(
     db_path: Path,
     *,

@@ -70,6 +70,26 @@ def summarize(profiles: list[dict]) -> dict:
     }
 
 
+def compare_summaries(baseline: dict, candidate: dict) -> dict:
+    if any(baseline.get(key) != candidate.get(key) for key in ("configuration", "cold", "warmup")):
+        raise ValueError("comparison requires matching build configuration, warm/cold mode and warmup count")
+    before, after = baseline["total"]["p50_ms"], candidate["total"]["p50_ms"]
+    if before <= 0 or after <= 0:
+        raise ValueError("comparison requires positive total durations")
+    baseline_counts = baseline["sample_counts"]
+    candidate_counts = candidate["sample_counts"]
+    keys = {key for counts in baseline_counts + candidate_counts for key in counts if key.endswith(".encode")}
+    drift = max((
+        abs(statistics.median([counts.get(key, 0) for counts in candidate_counts])
+            - statistics.median([counts.get(key, 0) for counts in baseline_counts]))
+        / max(1, statistics.median([counts.get(key, 0) for counts in baseline_counts]))
+        for key in keys
+    ), default=0)
+    return {"baseline_p50_ms": before, "candidate_p50_ms": after,
+            "speedup": before / after, "time_reduction_percent": (1 - after / before) * 100,
+            "maximum_relative_sample_count_drift": drift}
+
+
 def collect(device: str, directory: Path, timeout: int, cold: bool, configuration: str) -> dict:
     run_id = directory.name
     url = f"healthquantification://profile-export?run_id={run_id}"
@@ -115,6 +135,7 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--compare-summary", type=Path, help="compare with an earlier run's summary.json")
     args = parser.parse_args()
     if args.runs < 1 or args.warmup < 0 or args.timeout < 1:
         parser.error("runs/timeout must be positive; warmup must be nonnegative")
@@ -143,6 +164,8 @@ def main() -> int:
                     profiles.append(payload)
             summary = {"configuration": args.configuration, "cold": args.cold, "warmup": args.warmup,
                        "artifact_dir": str(session), **summarize(profiles)}
+            if args.compare_summary:
+                summary["comparison"] = compare_summaries(json.loads(args.compare_summary.read_text()), summary)
             (session / "summary.json").write_text(json.dumps(summary, indent=2))
             print(json.dumps(summary, indent=2))
         return 0

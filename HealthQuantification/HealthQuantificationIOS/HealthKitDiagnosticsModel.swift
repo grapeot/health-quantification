@@ -594,9 +594,18 @@ final class HealthKitService {
     }
 
     nonisolated static func isoTimestamp(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        // Per-thread reuse preserves ISO8601DateFormatter's sub-millisecond rounding
+        // and avoids sharing a mutable formatter across HealthKit callbacks.
+        let key = "healthquantification.utcTimestampFormatter"
+        let formatter: ISO8601DateFormatter
+        if let cached = Thread.current.threadDictionary[key] as? ISO8601DateFormatter {
+            formatter = cached
+        } else {
+            formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            Thread.current.threadDictionary[key] = formatter
+        }
         return formatter.string(from: date)
     }
 

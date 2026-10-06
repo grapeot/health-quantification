@@ -21,6 +21,7 @@ from health_quantification.storage import (
     ECG_LIST_LIMIT_MAX,
     ECG_VOLTAGE_POINT_CAP,
     count_ecg_records,
+    count_samples,
     normalize_ecg_bound,
     delete_activity_samples,
     delete_body_samples,
@@ -984,7 +985,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db_path,
             [_sleep_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
-        total_samples = len(query_sleep_samples(db_path=db_path, source=request.source))
+        total_samples = count_samples(db_path, table_name="sleep_samples", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/vitals", response_model=IngestResponse)
@@ -997,7 +998,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with timed("upsert"):
             upserted = upsert_vitals_samples(db_path, samples)
         with timed("count"):
-            total_samples = len(query_vitals_samples(db_path=db_path, source=request.source))
+            total_samples = count_samples(db_path, table_name="vitals_samples", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/body", response_model=IngestResponse)
@@ -1009,7 +1010,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db_path,
             [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
-        total_samples = len(query_body_samples(db_path=db_path, source=request.source))
+        total_samples = count_samples(db_path, table_name="body_samples", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/lifestyle", response_model=IngestResponse)
@@ -1021,7 +1022,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db_path,
             [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
-        total_samples = len(query_lifestyle_samples(db_path=db_path, source=request.source))
+        total_samples = count_samples(db_path, table_name="lifestyle_samples", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/activity", response_model=IngestResponse)
@@ -1033,7 +1034,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db_path,
             [_activity_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
-        total_samples = len(query_activity_samples(db_path=db_path, source=request.source))
+        total_samples = count_samples(db_path, table_name="activity_samples", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/workouts", response_model=IngestResponse)
@@ -1045,7 +1046,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db_path,
             [_workout_sample_to_storage_dict(request.source, sample) for sample in request.samples],
         )
-        total_samples = len(query_workout_samples(db_path=db_path, source=request.source))
+        total_samples = count_samples(db_path, table_name="workouts", source=request.source)
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/ecg", response_model=IngestResponse)

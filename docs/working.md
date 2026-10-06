@@ -4,6 +4,12 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-10-06: End-to-End Export and Ingest Optimization
+
+- Cached `ISO8601DateFormatter` per thread across export categories, preserving its existing UTC whole-second output and near-second-boundary rounding. Boundary and concurrent reuse tests guard against changing timestamp semantics.
+- Replaced full-row materialization for counts with source-scoped SQL `COUNT(*)` in six non-ECG ingest endpoints. Added `--compare-summary` to report timing improvements and workload drift while rejecting mismatched build configuration, warm/cold mode and warmup count.
+- Same-device Release benchmarks (one discarded warmup and five warm runs per batch) improved median export from 9.46 s to 3.05 s, a 3.10x speedup. All seven HealthKit-source tables had matching stored payload checksums and row counts before/after, excluding audit timestamps. All 172 Python tests and 33 XCTest unit tests passed. See `docs/performance.md` for methodology and limitations.
+
 ### 2026-10-06: Export Profiling Infrastructure and Real-Device Baseline
 
 - Implemented automated real-device export profiling: host runner (`scripts/ios_profile.py`), strict `profile-export` deep link, opt-in client instrumentation, backend `Server-Timing`, and atomic progress/completion artifacts. See `docs/performance.md`.
