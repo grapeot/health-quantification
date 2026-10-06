@@ -201,7 +201,9 @@ final class HealthKitService {
 
         var records: [VitalsSampleRecord] = []
         for configuration in configurations {
+            let queryStart = ExportProfiler.now()
             let quantitySamples = try await fetchQuantitySamples(days: days, type: configuration.type)
+            ExportProfiler.current?.record("vitals.\(configuration.metricType).query", since: queryStart, count: quantitySamples.count)
             if ["sleeping_breathing_disturbances", "sleeping_wrist_temperature", "heart_rate_variability_rmssd", "vo2_max"].contains(configuration.metricType) {
                 appendLog(title: "fetchVitalsMetric", payload: [
                     "metric_type": configuration.metricType,
@@ -209,6 +211,7 @@ final class HealthKitService {
                     "unit": configuration.unitLabel,
                 ])
             }
+            let mapStart = ExportProfiler.now()
             records.append(contentsOf: quantitySamples.map { sample in
                 VitalsSampleRecord(
                     sourceID: sample.uuid.uuidString,
@@ -221,6 +224,7 @@ final class HealthKitService {
                     metadata: [:]
                 )
             })
+            ExportProfiler.current?.record("vitals.\(configuration.metricType).map", since: mapStart, count: quantitySamples.count)
         }
 
         let now = Date()
@@ -234,9 +238,12 @@ final class HealthKitService {
                 "timestamp": lastUpdated,
             ]
         )
-        return records.sorted { lhs, rhs in
+        let sortStart = ExportProfiler.now()
+        let sorted = records.sorted { lhs, rhs in
             lhs.recordedAt < rhs.recordedAt
         }
+        ExportProfiler.current?.record("vitals.sort", since: sortStart)
+        return sorted
     }
 
     func physicalEffortDiagnostic(_ command: HealthDiagnosticCommand) async -> HealthDiagnosticArtifact {
@@ -598,6 +605,8 @@ final class HealthKitService {
     }
 
     func requestReadAuthorization(readTypes: Set<HKObjectType>) async throws {
+        let start = ExportProfiler.now()
+        defer { ExportProfiler.current?.record("healthkit.authorization", since: start) }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
                 if let error {

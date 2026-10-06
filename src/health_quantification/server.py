@@ -911,6 +911,9 @@ def _serialize_rows(
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    from time import perf_counter
+    from uuid import UUID
+    from .profiling import current_timings, timed
     active_settings = settings or load_settings()
 
     app = FastAPI(
@@ -925,8 +928,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     def get_initialized_db_path() -> Path:
-        initialize_database(active_settings.db_path)
+        with timed("initialize"):
+            initialize_database(active_settings.db_path)
         return active_settings.db_path
+
+    @app.middleware("http")
+    async def ingest_timings(request: Request, call_next):
+        value = request.headers.get("X-Health-Profile", "")
+        try:
+            if len(value) != 36 or not request.url.path.startswith("/ingest/"):
+                return await call_next(request)
+            UUID(value)
+        except ValueError:
+            return await call_next(request)
+        timings: dict[str, float] = {}
+        token = current_timings.set(timings)
+        start = perf_counter()
+        try:
+            response = await call_next(request)
+            timings["total"] = (perf_counter() - start) * 1000
+            response.headers["Server-Timing"] = ", ".join(
+                f"{phase};dur={duration:.3f}" for phase, duration in timings.items()
+            )
+            return response
+        finally:
+            current_timings.reset(token)
 
     @app.exception_handler(RequestValidationError)
     async def redact_ecg_validation(
@@ -966,11 +992,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: VitalsIngestRequest,
         db_path: Path = Depends(get_initialized_db_path),
     ) -> IngestResponse:
-        upserted = upsert_vitals_samples(
-            db_path,
-            [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples],
-        )
-        total_samples = len(query_vitals_samples(db_path=db_path, source=request.source))
+        with timed("convert"):
+            samples = [_recorded_metric_sample_to_storage_dict(request.source, sample) for sample in request.samples]
+        with timed("upsert"):
+            upserted = upsert_vitals_samples(db_path, samples)
+        with timed("count"):
+            total_samples = len(query_vitals_samples(db_path=db_path, source=request.source))
         return IngestResponse(status="accepted", upserted=upserted, total_samples=total_samples)
 
     @app.post("/ingest/body", response_model=IngestResponse)

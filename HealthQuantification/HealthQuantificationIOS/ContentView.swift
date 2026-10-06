@@ -295,6 +295,7 @@ struct ContentView: View {
         case .duplicate:
             return
         case .busy:
+            if let command, command.profile { try? ExportProfiler(runID: command.id).finish(.busy) }
             if let command {
                 finishCallback(for: command, result: .busy)
             }
@@ -309,6 +310,7 @@ struct ContentView: View {
     @MainActor
     private func exportAll(command: HealthExportCommand?, executionID: UUID) async {
         guard let exportContext = makeExportContext() else {
+            if command?.profile == true { try? ExportProfiler(runID: executionID).finish(.failed(.invalidServerURL)) }
             exportRuntime.finish(executionID: executionID)
             if let command {
                 finishCallback(for: command, result: .failed(.invalidServerURL))
@@ -320,8 +322,15 @@ struct ContentView: View {
         exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, workout, and electrocardiogram samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
 
-        let result = await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient)
-            .exportAll(serverURL: exportContext.url)
+        let profiler = command?.profile == true ? ExportProfiler(runID: executionID) : nil
+        let result = await ExportProfiler.$current.withValue(profiler) {
+            await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient)
+                .exportAll(serverURL: exportContext.url)
+        }
+        if let profiler {
+            do { try profiler.finish(result) }
+            catch { model.appendLog(title: "profile", payload: ["status": "artifact_write_failed"]) }
+        }
 
         switch result.status {
         case .partial:

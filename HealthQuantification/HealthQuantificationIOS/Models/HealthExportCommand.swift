@@ -31,10 +31,12 @@ struct HealthExportCallback: Equatable {
 struct HealthExportCommand: Equatable, Identifiable {
     let id: UUID
     let callback: HealthExportCallback?
+    let profile: Bool
 
-    init(id: UUID = UUID(), callback: HealthExportCallback?) {
+    init(id: UUID = UUID(), callback: HealthExportCallback?, profile: Bool = false) {
         self.id = id
         self.callback = callback
+        self.profile = profile
     }
 }
 
@@ -179,6 +181,14 @@ enum HealthExportDeepLinkParser {
             .joined(separator: "/")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .lowercased()
+        if normalizedAction == "profile-export" {
+            guard url.path.isEmpty || url.path == "/",
+                  let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                  items.count == 1, items[0].name == "run_id",
+                  let value = items[0].value, value.count == 36,
+                  let runID = UUID(uuidString: value) else { return nil }
+            return HealthExportCommand(id: runID, callback: nil, profile: true)
+        }
         guard normalizedAction == "export-all" || normalizedAction == "export/all" else {
             return nil
         }

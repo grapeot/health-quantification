@@ -34,7 +34,7 @@ struct HealthExportCoordinator {
         var results: [HealthExportCategoryResult] = []
 
         do {
-            let samples = try await dataSource.fetchSleepSamples(days: days)
+            let samples = try await ExportProfiler.measure("sleep.fetch") { try await dataSource.fetchSleepSamples(days: days) }
             let response = try await ingestClient.ingestSleep(serverURL: serverURL, samples: samples)
             results.append(.success(.sleep, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -42,7 +42,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchVitalsSamples(days: days)
+            let samples = try await ExportProfiler.measure("vitals.fetch") { try await dataSource.fetchVitalsSamples(days: days) }
             let response = try await ingestClient.ingestVitals(serverURL: serverURL, samples: samples)
             results.append(.success(.vitals, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -50,7 +50,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchBodySamples(days: days)
+            let samples = try await ExportProfiler.measure("body.fetch") { try await dataSource.fetchBodySamples(days: days) }
             if samples.isEmpty {
                 results.append(.success(.body, sent: 0, upserted: 0))
             } else {
@@ -62,7 +62,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchLifestyleSamples(days: days)
+            let samples = try await ExportProfiler.measure("lifestyle.fetch") { try await dataSource.fetchLifestyleSamples(days: days) }
             if samples.isEmpty {
                 results.append(.success(.lifestyle, sent: 0, upserted: 0))
             } else {
@@ -74,7 +74,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchActivitySamples(days: days)
+            let samples = try await ExportProfiler.measure("activity.fetch") { try await dataSource.fetchActivitySamples(days: days) }
             let response = try await ingestClient.ingestActivity(serverURL: serverURL, samples: samples)
             results.append(.success(.activity, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -82,7 +82,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchWorkoutSamples(days: days)
+            let samples = try await ExportProfiler.measure("workouts.fetch") { try await dataSource.fetchWorkoutSamples(days: days) }
             let response = try await ingestClient.ingestWorkouts(serverURL: serverURL, samples: samples)
             results.append(.success(.workouts, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -90,7 +90,7 @@ struct HealthExportCoordinator {
         }
 
         do {
-            let samples = try await dataSource.fetchEcgSamples(days: days)
+            let samples = try await ExportProfiler.measure("ecg.fetch") { try await dataSource.fetchEcgSamples(days: days) }
             if samples.isEmpty {
                 results.append(.success(.ecg, sent: 0, upserted: 0, note: ECGExportMapping.emptyResultNote))
             } else {
