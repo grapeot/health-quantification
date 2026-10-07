@@ -86,6 +86,7 @@ CLI 查询与写入参数中，`--metric` 必须使用数据库存储的精确�
      healthquantification://export-all
      ```
 
+   - 长按主屏幕图标，选择 Transfer Now，会按既有 `healthquantification://export-all` 导出最近 30 天的样本。它只使用应用内已保存的服务器地址，不接收服务器地址、回调，或任何调用方传入的参数。已有导出进行中时不会再启动一次。
    - 支持带一次性 callback 的跨 App 导出 handoff：
 
      ```text

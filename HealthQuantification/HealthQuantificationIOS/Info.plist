@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>healthquantification.export-all</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Transfer Now</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Export last 30 days to saved server</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>square.and.arrow.up</string>
+		</dict>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

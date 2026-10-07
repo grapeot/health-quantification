@@ -18,7 +18,7 @@ OpenCode 创建一次性 Callback URL
 → OpenCode 接收回调并在原 Session 继续分析
 ```
 
-手动导出按钮与无 Callback 的 Deep Link (`healthquantification://export-all`) 保持兼容与独立可用。
+手动导出按钮与无 Callback 的 Deep Link (`healthquantification://export-all`) 保持兼容与独立可用。主屏幕快捷操作 Transfer Now 并非新 URL，不包含回调且无法携带服务器地址，仅向应用内已保存的服务器导出最近 30 天样本。已有导出进行中时不会再启动一次。
 
 ## 功能要求
 

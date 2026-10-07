@@ -57,12 +57,14 @@ struct ContentView: View {
         .task {
             model.runDoctor()
         }
-        .onChange(of: exportCommands) { _, commands in
-            guard !commands.isEmpty else { return }
-            exportCommands.removeAll()
-            for command in commands {
+        .onAppear {
+            HomeScreenExportRouter.shared.attach { command in
                 triggerExportAll(command: command)
             }
+            consumeExportCommands()
+        }
+        .onChange(of: exportCommands) { _, _ in
+            consumeExportCommands()
         }
     }
 
@@ -287,6 +289,16 @@ struct ContentView: View {
                         .stroke(Color.ideBorder.opacity(0.35), lineWidth: 1)
                 )
         )
+    }
+
+    @MainActor
+    private func consumeExportCommands() {
+        guard !exportCommands.isEmpty else { return }
+        let commands = exportCommands
+        exportCommands.removeAll()
+        for command in commands {
+            triggerExportAll(command: command)
+        }
     }
 
     @MainActor

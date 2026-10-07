@@ -4,6 +4,14 @@
 
 （本日志引用的路径、指令与格式参数均基于公开契约与合成示例）
 
+### 2026-10-07 (主屏长按立即传输)
+
+- 新增主屏幕静态快捷操作 Transfer Now。它使用应用内已保存的服务器地址导出最近 30 天样本，等同于无 callback 的 `healthquantification://export-all`，不接收服务器地址、回调或任何调用方参数。
+- 冷启动只在 scene 连接回调接收一次。应用已在后台时进入同一条导出路径。
+- 导出状态放在进程内共享对象里，多个窗口共用这一份。已有导出进行中时不会再启动一次。这是代码结构和一条单元测试，没有做 iPad 界面测试。
+- 测试用 server URL 覆盖只编译进模拟器 Debug，不进入真机安装包。只在已保存地址与覆盖值不同时写入，不会在每次启动无条件重写。
+- 长按的冷启动和热启动只在 iOS 模拟器主屏幕快捷菜单上用 XCUITest 各跑过一次。没有在真机上验证长按。真机只做了原地安装。
+
 ### 2026-10-06: End-to-End Export and Ingest Optimization
 
 - Cached `ISO8601DateFormatter` per thread across export categories, preserving its existing UTC whole-second output and near-second-boundary rounding. Boundary and concurrent reuse tests guard against changing timestamp semantics.

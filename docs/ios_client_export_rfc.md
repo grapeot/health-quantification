@@ -16,6 +16,10 @@ OpenCode 侧的权限控制、Callback 持久化与 Session 恢复逻辑不属�
 healthquantification://export-all
 ```
 
+### 主屏快捷操作
+
+主屏幕静态快捷操作 Transfer Now 不是新的 URL，不接收服务器地址、回调或任何调用方传入的参数，仅使用应用内已保存的服务器地址导出最近 30 天样本，等同于无 callback 的 `healthquantification://export-all`。冷启动只在 scene 连接回调接收一次；应用已在后台时进入同一条导出路径。多个窗口共用同一次导出，已有导出正在执行时不会再启动一次。
+
 ### 跨 App Handoff 唤起
 
 ```text
@@ -99,7 +103,9 @@ opencode://client-action-return/<callback-id>?status=partial&sent=1000&upserted=
 
 - `Models/HealthExportCommand.swift`：Deep Link 命令解析与 Callback URL 构建。
 - `Services/HealthExportCoordinator.swift`：六类别顺序导出与结果聚合。
-- `HealthQuantificationIOSApp.swift`：App 级 Deep Link URL 入口捕获。
+- `HealthQuantificationIOSApp.swift`：SwiftUI scene 入口。
+- `ExportShortcutSceneDelegate.swift`：主屏快捷操作的冷启动与热启动入口。
+- `Models/HomeScreenShortcut.swift`：固定 type 到无 callback 导出命令的映射。
 - `ContentView.swift`：导出状态展示与 UI 交互处理。
 - `HealthQuantificationIOSTests/HealthExportCommandTests.swift`：命令解析与 Callback 构建单元测试。
 - `HealthQuantificationIOSTests/HealthExportCoordinatorTests.swift`：顺序导出与容错逻辑单元测试。
