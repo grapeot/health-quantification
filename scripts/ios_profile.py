@@ -65,8 +65,10 @@ def summarize(profiles: list[dict]) -> dict:
             sum(event["duration_ms"] for event in profile["events"] if event["phase"] == phase)
             for profile in profiles
         ]) for phase in phases},
-        "sample_counts": [{event["phase"]: event["count"] for event in profile["events"]
-                           if event.get("count") is not None} for profile in profiles],
+        "sample_counts": [{phase: sum(event.get("count", 0) for event in profile["events"]
+                                      if event["phase"] == phase)
+                           for phase in {event["phase"] for event in profile["events"]
+                                         if event.get("count") is not None}} for profile in profiles],
     }
 
 

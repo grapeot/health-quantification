@@ -41,6 +41,23 @@ final class HealthQuantificationIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testExportProgressShowsStageAndSampleCounts() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["UITEST_HEALTH_DATA_AVAILABLE_TRUE", "UITEST_EXPORT_PROGRESS"]
+        app.launch()
+        let label = app.staticTexts["exportProgressLabel"]
+        XCTAssertTrue(label.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !label.isHittable { app.swipeUp() }
+        XCTAssertTrue(label.isHittable)
+        XCTAssertEqual(label.label, "2 / 7 · vitals · 36,000 / 72,000 samples")
+        XCTAssertTrue(app.progressIndicators["exportProgressBar"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Export progress"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

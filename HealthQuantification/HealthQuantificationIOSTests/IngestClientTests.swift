@@ -227,6 +227,99 @@ final class IngestClientTests: XCTestCase {
         configuration.protocolClasses = [SyntheticIngestURLProtocol.self]
         return URLSession(configuration: configuration)
     }
+
+    @MainActor
+    func testVitalsBatchesPreserveEverySampleAndAggregateResponses() async throws {
+        VitalsBatchURLProtocol.receivedIDs = []
+        VitalsBatchURLProtocol.batchSizes = []
+        VitalsBatchURLProtocol.failRequest = nil
+        let samples = (0..<4_003).map { index in
+            VitalsSampleRecord(sourceID: "synthetic-\(index)", recordedAt: "2026-03-31T06:30:00Z",
+                               metricType: "heart_rate", value: 60, unit: "count/min",
+                               sourceBundleID: "test.synthetic", sourceName: "Synthetic", metadata: [:])
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VitalsBatchURLProtocol.self]
+        var progress: [Int] = []
+        let client = IngestClient(session: URLSession(configuration: configuration), onVitalsProgress: { completed, _ in
+            progress.append(completed)
+        })
+        let response = try await client.ingestVitals(serverURL: URL(string: "http://127.0.0.1:9")!, samples: samples)
+        XCTAssertEqual(VitalsBatchURLProtocol.batchSizes, [2_000, 2_000, 3])
+        XCTAssertEqual(VitalsBatchURLProtocol.receivedIDs, samples.map(\.sourceID))
+        XCTAssertEqual(response.upserted, samples.count)
+        XCTAssertEqual(response.totalSamples, samples.count)
+        XCTAssertEqual(progress, [0, 2000, 4000, 4003])
+    }
+
+    @MainActor
+    func testVitalsBatchFailureDoesNotReportSuccessOrSendLaterBatches() async throws {
+        VitalsBatchURLProtocol.receivedIDs = []
+        VitalsBatchURLProtocol.batchSizes = []
+        VitalsBatchURLProtocol.failRequest = 2
+        defer { VitalsBatchURLProtocol.failRequest = nil }
+        let sample = VitalsSampleRecord(sourceID: "synthetic", recordedAt: "2026-03-31T06:30:00Z",
+                                       metricType: "heart_rate", value: 60, unit: "count/min",
+                                       sourceBundleID: "test.synthetic", sourceName: "Synthetic", metadata: [:])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VitalsBatchURLProtocol.self]
+        var progress: [Int] = []
+        let client = IngestClient(session: URLSession(configuration: configuration), onVitalsProgress: { completed, _ in
+            progress.append(completed)
+        })
+        do {
+            _ = try await client.ingestVitals(serverURL: URL(string: "http://127.0.0.1:9")!,
+                                             samples: Array(repeating: sample, count: 4_003))
+            XCTFail("A failed batch must fail the category")
+        } catch {
+            XCTAssertEqual(VitalsBatchURLProtocol.batchSizes, [2_000, 2_000])
+            let failure = try XCTUnwrap(error as? VitalsBatchUploadError)
+            XCTAssertEqual(failure.acknowledged, 2000)
+            XCTAssertEqual(failure.upserted, 2000)
+            XCTAssertEqual(failure.failedBatch, 2)
+            XCTAssertEqual(progress, [0, 2000])
+        }
+    }
+}
+
+private final class VitalsBatchURLProtocol: URLProtocol {
+    static var receivedIDs: [String] = []
+    static var batchSizes: [Int] = []
+    static var failRequest: Int?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open()
+                defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    if count <= 0 { break }
+                    data.append(buffer, count: count)
+                }
+            }
+            let envelope = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let samples = envelope["samples"] as! [[String: Any]]
+            Self.batchSizes.append(samples.count)
+            if Self.batchSizes.count == Self.failRequest {
+                client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
+                return
+            }
+            Self.receivedIDs.append(contentsOf: samples.map { $0["source_id"] as! String })
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: try JSONSerialization.data(withJSONObject: [
+                "status": "accepted", "upserted": samples.count, "total_samples": Self.receivedIDs.count]))
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+    override func stopLoading() {}
 }
 
 private final class SyntheticIngestURLProtocol: URLProtocol {
