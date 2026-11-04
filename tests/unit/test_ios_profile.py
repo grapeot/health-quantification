@@ -36,6 +36,16 @@ def test_summarizes_repeated_spans_without_double_counting_categories():
     assert result["phases"]["ecg.http"]["p50_ms"] == 5
 
 
+def test_summarizes_batch_sample_counts_without_losing_earlier_batches():
+    payload = fixture()
+    payload["events"] += [
+        {"phase": f"vitals.{phase}", "duration_ms": 1, "count": count}
+        for count in (2000, 2000, 3) for phase in ("encode", "ingested")
+    ]
+    validate_profile(payload, RUN_ID)
+    assert summarize([payload])["sample_counts"] == [{"vitals.encode": 4003, "vitals.ingested": 4003}]
+
+
 def test_comparison_reports_workload_drift_and_rejects_mixed_modes():
     baseline = {"configuration": "Release", "cold": False, "warmup": 1, "total": {"p50_ms": 12},
                 "sample_counts": [{"vitals.encode": 100}]}

@@ -28,8 +28,8 @@ struct ContentView: View {
     @State private var exportStatusDetail = "Waiting for a command."
     @State private var exportStatusTone: ExportStatusTone = .neutral
     @State private var activeAction: String? = nil
-
-    private let ingestClient = IngestClient()
+    @State private var exportProgress = 0.0
+    @State private var exportProgressLabel = ""
 
     var body: some View {
         ZStack {
@@ -56,6 +56,15 @@ struct ContentView: View {
         }
         .task {
             model.runDoctor()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("UITEST_EXPORT_PROGRESS") {
+                _ = exportRuntime.begin(commandID: nil)
+                exportStatusTitle = "Exporting"
+                exportStatusDetail = "Uploading vitals"
+                exportProgress = 3.5 / 14.0
+                exportProgressLabel = "2 / 7 · vitals · 36,000 / 72,000 samples"
+            }
+            #endif
         }
         .onAppear {
             HomeScreenExportRouter.shared.attach { command in
@@ -221,6 +230,18 @@ struct ContentView: View {
                     Spacer()
                 }
 
+                if exportRuntime.isExporting {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProgressView(value: exportProgress)
+                            .tint(.ideAccent)
+                            .accessibilityIdentifier("exportProgressBar")
+                        Text(exportProgressLabel)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.ideTextSecondary)
+                            .accessibilityIdentifier("exportProgressLabel")
+                    }
+                }
+
                 Text(exportStatusDetail)
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundStyle(exportStatusTone.detailColor)
@@ -333,10 +354,25 @@ struct ContentView: View {
         exportStatusTitle = "Exporting"
         exportStatusDetail = "Fetching sleep, vitals, body, lifestyle, activity, workout, and electrocardiogram samples from the last 30 days and sending them to \(exportContext.trimmedURL)."
         exportStatusTone = .neutral
+        exportProgress = 0
+        exportProgressLabel = "1 / 7 · sleep"
 
         let profiler = command?.profile == true ? ExportProfiler(runID: executionID) : nil
+        let ingestClient = IngestClient(onVitalsProgress: { completed, total in
+            guard exportRuntime.isExporting else { return }
+            exportProgress = (3 + Double(completed) / Double(max(total, 1))) / 14
+            exportProgressLabel = "2 / 7 · vitals · \(completed.formatted()) / \(total.formatted()) samples"
+            model.appendLog(title: "uploadVitals", payload: [
+                "completed": String(completed), "total": String(total),
+            ])
+        })
         let result = await ExportProfiler.$current.withValue(profiler) {
-            await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient)
+            await HealthExportCoordinator(dataSource: model, ingestClient: ingestClient, onProgress: { category, uploading in
+                let index = HealthExportCategory.allCases.firstIndex(of: category) ?? 0
+                exportProgress = Double(index * 2 + (uploading ? 1 : 0)) / 14
+                exportProgressLabel = "\(index + 1) / 7 · \(category.rawValue)"
+                exportStatusDetail = "\(uploading ? "Uploading" : "Fetching") \(category.rawValue)"
+            })
                 .exportAll(serverURL: exportContext.url)
         }
         if let profiler {

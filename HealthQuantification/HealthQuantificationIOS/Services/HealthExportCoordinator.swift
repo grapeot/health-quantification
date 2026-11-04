@@ -29,12 +29,15 @@ extension IngestClient: HealthExportIngesting {}
 struct HealthExportCoordinator {
     let dataSource: any HealthExportDataSource
     let ingestClient: any HealthExportIngesting
+    var onProgress: ((HealthExportCategory, Bool) -> Void)? = nil
 
     func exportAll(serverURL: URL, days: Int = 30) async -> HealthExportResult {
         var results: [HealthExportCategoryResult] = []
 
         do {
+            onProgress?(.sleep, false)
             let samples = try await ExportProfiler.measure("sleep.fetch") { try await dataSource.fetchSleepSamples(days: days) }
+            onProgress?(.sleep, true)
             let response = try await ingestClient.ingestSleep(serverURL: serverURL, samples: samples)
             results.append(.success(.sleep, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -42,15 +45,21 @@ struct HealthExportCoordinator {
         }
 
         do {
+            onProgress?(.vitals, false)
             let samples = try await ExportProfiler.measure("vitals.fetch") { try await dataSource.fetchVitalsSamples(days: days) }
+            onProgress?(.vitals, true)
             let response = try await ingestClient.ingestVitals(serverURL: serverURL, samples: samples)
             results.append(.success(.vitals, sent: samples.count, upserted: response.upserted))
+        } catch let error as VitalsBatchUploadError {
+            results.append(.failure(.vitals, error: error, sent: error.acknowledged, upserted: error.upserted))
         } catch {
             results.append(.failure(.vitals, error: error))
         }
 
         do {
+            onProgress?(.body, false)
             let samples = try await ExportProfiler.measure("body.fetch") { try await dataSource.fetchBodySamples(days: days) }
+            onProgress?(.body, true)
             if samples.isEmpty {
                 results.append(.success(.body, sent: 0, upserted: 0))
             } else {
@@ -62,7 +71,9 @@ struct HealthExportCoordinator {
         }
 
         do {
+            onProgress?(.lifestyle, false)
             let samples = try await ExportProfiler.measure("lifestyle.fetch") { try await dataSource.fetchLifestyleSamples(days: days) }
+            onProgress?(.lifestyle, true)
             if samples.isEmpty {
                 results.append(.success(.lifestyle, sent: 0, upserted: 0))
             } else {
@@ -74,7 +85,9 @@ struct HealthExportCoordinator {
         }
 
         do {
+            onProgress?(.activity, false)
             let samples = try await ExportProfiler.measure("activity.fetch") { try await dataSource.fetchActivitySamples(days: days) }
+            onProgress?(.activity, true)
             let response = try await ingestClient.ingestActivity(serverURL: serverURL, samples: samples)
             results.append(.success(.activity, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -82,7 +95,9 @@ struct HealthExportCoordinator {
         }
 
         do {
+            onProgress?(.workouts, false)
             let samples = try await ExportProfiler.measure("workouts.fetch") { try await dataSource.fetchWorkoutSamples(days: days) }
+            onProgress?(.workouts, true)
             let response = try await ingestClient.ingestWorkouts(serverURL: serverURL, samples: samples)
             results.append(.success(.workouts, sent: samples.count, upserted: response.upserted))
         } catch {
@@ -90,7 +105,9 @@ struct HealthExportCoordinator {
         }
 
         do {
+            onProgress?(.ecg, false)
             let samples = try await ExportProfiler.measure("ecg.fetch") { try await dataSource.fetchEcgSamples(days: days) }
+            onProgress?(.ecg, true)
             if samples.isEmpty {
                 results.append(.success(.ecg, sent: 0, upserted: 0, note: ECGExportMapping.emptyResultNote))
             } else {

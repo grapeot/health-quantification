@@ -29,6 +29,45 @@ final class HealthExportCoordinatorTests: XCTestCase {
         XCTAssertTrue(ingest.categories.contains(.workouts))
     }
 
+    func testPartialUploadCountsReachFinalResultAndCallback() async throws {
+        let ingest = FakeHealthExportIngestClient()
+        ingest.vitalsError = VitalsBatchUploadError(
+            acknowledged: 2_000, upserted: 1_997, failedBatch: 2,
+            underlying: URLError(.timedOut)
+        )
+        let result = await HealthExportCoordinator(dataSource: FakeHealthExportDataSource(), ingestClient: ingest)
+            .exportAll(serverURL: try XCTUnwrap(URL(string: "http://localhost:7996")))
+
+        XCTAssertEqual(result.status, .partial)
+        XCTAssertEqual(result.failedCategories, [.vitals])
+        let vitals = try XCTUnwrap(result.categoryResults.first { $0.category == .vitals })
+        XCTAssertEqual(vitals.sent, 2_000)
+        XCTAssertEqual(vitals.upserted, 1_997)
+        XCTAssertEqual(result.sent, 2_000)
+        XCTAssertEqual(result.upserted, 1_997)
+        XCTAssertTrue(vitals.line.contains("Batch 2 failed"))
+        XCTAssertTrue(vitals.line.contains("outcome unconfirmed"))
+        XCTAssertTrue(ingest.categories.contains(.workouts))
+        let callback = Dictionary(uniqueKeysWithValues: result.callbackQueryItems.map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(callback["sent"], "2000")
+        XCTAssertEqual(callback["upserted"], "1997")
+        XCTAssertEqual(callback["status"], "partial")
+        XCTAssertEqual(callback["failed"], "vitals")
+    }
+
+    func testProgressReportsOrderedFetchAndUploadStages() async throws {
+        var stages: [String] = []
+        let result = await HealthExportCoordinator(
+            dataSource: FakeHealthExportDataSource(), ingestClient: FakeHealthExportIngestClient(),
+            onProgress: { category, uploading in
+                stages.append("\(category.rawValue).\(uploading ? "upload" : "fetch")")
+            }
+        ).exportAll(serverURL: try XCTUnwrap(URL(string: "http://localhost:7996")))
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(stages, HealthExportCategory.allCases.flatMap { ["\($0.rawValue).fetch", "\($0.rawValue).upload"] })
+    }
+
     func testEmptyEcgDoesNotClaimNormalAndDoesNotDropOtherCategories() async throws {
         let dataSource = FakeHealthExportDataSource()
         let ingest = FakeHealthExportIngestClient()
@@ -151,13 +190,15 @@ private final class FakeHealthExportDataSource: HealthExportDataSource {
 private final class FakeHealthExportIngestClient: HealthExportIngesting {
     var categories: [HealthExportCategory] = []
     var failingSourceIDs: Set<String> = []
+    var vitalsError: Error?
 
     func ingestSleep(serverURL: URL, samples: [SleepSampleRecord]) async throws -> IngestResponse {
         response(for: .sleep, count: samples.count)
     }
 
     func ingestVitals(serverURL: URL, samples: [VitalsSampleRecord]) async throws -> IngestResponse {
-        response(for: .vitals, count: samples.count)
+        if let vitalsError { throw vitalsError }
+        return response(for: .vitals, count: samples.count)
     }
 
     func ingestBody(serverURL: URL, samples: [BodySampleRecord]) async throws -> IngestResponse {

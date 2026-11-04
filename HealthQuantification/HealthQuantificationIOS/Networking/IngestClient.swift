@@ -2,9 +2,11 @@ import Foundation
 
 struct IngestClient {
     private let session: URLSession
+    private let onVitalsProgress: (@MainActor @Sendable (Int, Int) -> Void)?
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, onVitalsProgress: (@MainActor @Sendable (Int, Int) -> Void)? = nil) {
         self.session = session
+        self.onVitalsProgress = onVitalsProgress
     }
 
     func ingestSleep(serverURL: URL, samples: [SleepSampleRecord]) async throws -> IngestResponse {
@@ -12,7 +14,30 @@ struct IngestClient {
     }
 
     func ingestVitals(serverURL: URL, samples: [VitalsSampleRecord]) async throws -> IngestResponse {
-        try await ingest(samples: samples, endpointName: "vitals", serverURL: serverURL)
+        // Bound each request rather than raising the timeout for a whole 30-day payload.
+        // Source IDs make an interrupted export safe to send again.
+        guard !samples.isEmpty else {
+            return try await ingest(samples: samples, endpointName: "vitals", serverURL: serverURL)
+        }
+        var accepted = 0
+        var lastResponse: IngestResponse?
+        onVitalsProgress?(0, samples.count)
+        for start in stride(from: 0, to: samples.count, by: 2_000) {
+            let end = min(start + 2_000, samples.count)
+            let response: IngestResponse
+            do {
+                response = try await ingest(
+                    samples: Array(samples[start..<end]), endpointName: "vitals", serverURL: serverURL
+                )
+            } catch {
+                throw VitalsBatchUploadError(acknowledged: start, upserted: accepted,
+                                            failedBatch: start / 2_000 + 1, underlying: error)
+            }
+            accepted += response.upserted
+            lastResponse = response
+            onVitalsProgress?(end, samples.count)
+        }
+        return IngestResponse(status: lastResponse!.status, upserted: accepted, totalSamples: lastResponse!.totalSamples)
     }
 
     func ingestBody(serverURL: URL, samples: [BodySampleRecord]) async throws -> IngestResponse {
@@ -85,6 +110,17 @@ struct IngestClient {
         } catch {
             throw IngestClientError.networkFailed(error)
         }
+    }
+}
+
+struct VitalsBatchUploadError: LocalizedError {
+    let acknowledged: Int
+    let upserted: Int
+    let failedBatch: Int
+    let underlying: Error
+
+    var errorDescription: String? {
+        "Batch \(failedBatch) failed after \(acknowledged) acknowledged samples (\(upserted) upserted); failed batch outcome unconfirmed. \(underlying.localizedDescription)"
     }
 }
 
